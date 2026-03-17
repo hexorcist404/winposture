@@ -1,22 +1,232 @@
 """Shared helper utilities for WinPosture.
 
 All PowerShell, WMI, and registry access goes through this module so that
-check modules stay clean and testable (mock these helpers, not subprocess).
+check modules stay clean and testable (mock subprocess.run in tests, not
+internal helpers).
 """
 
 from __future__ import annotations
 
 import ctypes
+import json
 import logging
 import subprocess
 import sys
-from typing import Any
+
+from winposture.exceptions import WinPostureError
 
 log = logging.getLogger(__name__)
 
+# Base PowerShell invocation flags shared by every helper
+_PS_CMD = [
+    "powershell.exe",
+    "-NonInteractive",
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+]
+
+
+# ---------------------------------------------------------------------------
+# Core PowerShell runner
+# ---------------------------------------------------------------------------
+
+
+def run_powershell(command: str, timeout: int = 30) -> str:
+    """Run a PowerShell command and return its stdout as a string.
+
+    Args:
+        command: The PowerShell command or script block to execute.
+        timeout: Seconds before the subprocess is killed (default 30).
+
+    Returns:
+        stdout stripped of leading/trailing whitespace.
+
+    Raises:
+        WinPostureError: On non-zero exit code, timeout, or launch failure.
+    """
+    log.debug("run_powershell: %s", command[:200])
+    try:
+        result = subprocess.run(
+            [*_PS_CMD, command],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise WinPostureError(
+            f"PowerShell command timed out after {timeout}s: {command[:80]}"
+        ) from exc
+    except FileNotFoundError as exc:
+        raise WinPostureError("powershell.exe not found — is this Windows?") from exc
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise WinPostureError(
+            f"PowerShell exited {result.returncode}: {stderr}"
+        )
+
+    return result.stdout.strip()
+
+
+# ---------------------------------------------------------------------------
+# JSON variant
+# ---------------------------------------------------------------------------
+
+
+def run_powershell_json(command: str, timeout: int = 30) -> dict | list:
+    """Run a PowerShell command whose output is JSON and parse it.
+
+    The command is responsible for piping through ``ConvertTo-Json``.
+
+    Args:
+        command: PowerShell command that writes valid JSON to stdout.
+        timeout: Seconds before the subprocess is killed (default 30).
+
+    Returns:
+        Parsed Python ``dict`` or ``list``.
+
+    Raises:
+        WinPostureError: On PowerShell failure, empty output, or invalid JSON.
+    """
+    output = run_powershell(command, timeout=timeout)
+
+    if not output:
+        raise WinPostureError(
+            "PowerShell command returned empty output (expected JSON)"
+        )
+
+    try:
+        return json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise WinPostureError(
+            f"Failed to parse PowerShell JSON output: {exc}"
+        ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Registry reader
+# ---------------------------------------------------------------------------
+
+
+def read_registry(hive: str, path: str, value_name: str) -> str | int | None:
+    """Read a single Windows registry value via PowerShell.
+
+    Uses ``Get-ItemProperty`` so the implementation is fully testable by
+    mocking ``subprocess.run`` — no ``winreg`` import required.
+
+    Args:
+        hive:       Registry hive abbreviation: ``HKLM``, ``HKCU``, or ``HKU``.
+        path:       Key path below the hive, e.g.
+                    ``SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion``.
+        value_name: Name of the registry value to read.
+
+    Returns:
+        The value data as ``str`` or ``int``, or ``None`` if the key or
+        value does not exist or access is denied.
+
+    Raises:
+        WinPostureError: If *hive* is not one of the supported abbreviations.
+    """
+    _SUPPORTED_HIVES = {"HKLM", "HKCU", "HKU"}
+    hive_upper = hive.upper()
+    if hive_upper not in _SUPPORTED_HIVES:
+        raise WinPostureError(
+            f"Unsupported registry hive {hive!r}. "
+            f"Supported: {', '.join(sorted(_SUPPORTED_HIVES))}"
+        )
+
+    ps_path = f"{hive_upper}:\\{path}"
+    # Emit nothing (exit 0) when key/value is absent; print the value otherwise
+    script = (
+        f"$p = Get-ItemProperty -LiteralPath '{ps_path}' "
+        f"-Name '{value_name}' -ErrorAction SilentlyContinue; "
+        f"if ($null -ne $p) {{ $p.'{value_name}' }}"
+    )
+
+    try:
+        output = run_powershell(script)
+    except WinPostureError as exc:
+        log.warning(
+            "Registry read failed (%s\\%s\\%s): %s", hive, path, value_name, exc
+        )
+        return None
+
+    if not output:
+        log.debug("Registry value not found: %s\\%s\\%s", hive, path, value_name)
+        return None
+
+    # Preserve integer type when the value looks like a plain integer
+    try:
+        return int(output)
+    except ValueError:
+        return output
+
+
+# ---------------------------------------------------------------------------
+# WMI / CIM query
+# ---------------------------------------------------------------------------
+
+
+def get_wmi_object(
+    wmi_class: str,
+    namespace: str = "root\\cimv2",
+    properties: list[str] | None = None,
+) -> list[dict]:
+    """Query WMI via ``Get-CimInstance`` and return a list of property dicts.
+
+    Args:
+        wmi_class:  WMI class name, e.g. ``Win32_OperatingSystem``.
+        namespace:  WMI namespace (default ``root\\cimv2``).
+        properties: Specific property names to select; ``None`` selects all.
+
+    Returns:
+        A list of dicts, one per WMI instance.  Returns an empty list on
+        access-denied, class-not-found, or any other error — callers should
+        treat an empty list as "could not retrieve data" and produce an
+        appropriate ``Status.ERROR`` result.
+    """
+    select = ", ".join(properties) if properties else "*"
+    script = (
+        f"Get-CimInstance -ClassName '{wmi_class}' -Namespace '{namespace}' "
+        f"| Select-Object {select} "
+        f"| ConvertTo-Json -Depth 3 -Compress"
+    )
+
+    try:
+        output = run_powershell(script)
+    except WinPostureError as exc:
+        log.warning("WMI query failed for %s: %s", wmi_class, exc)
+        return []
+
+    if not output:
+        return []
+
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError as exc:
+        log.warning("Failed to parse WMI JSON for %s: %s", wmi_class, exc)
+        return []
+
+    # ConvertTo-Json emits a bare object (dict) when only one instance exists
+    if isinstance(data, dict):
+        return [data]
+    if isinstance(data, list):
+        return data
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Platform / privilege helpers
+# ---------------------------------------------------------------------------
+
 
 def is_admin() -> bool:
-    """Return True if the current process is running with administrator privileges."""
+    """Return ``True`` if the current process has administrator privileges.
+
+    Always returns ``False`` on non-Windows platforms.
+    """
     if sys.platform != "win32":
         return False
     try:
@@ -25,89 +235,33 @@ def is_admin() -> bool:
         return False
 
 
-def run_powershell(script: str, timeout: int = 30) -> str:
-    """Run a PowerShell snippet and return stdout as a string.
+def require_windows() -> None:
+    """Raise ``WinPostureError`` if not running on Windows.
 
-    Args:
-        script:  The PowerShell script text to execute.
-        timeout: Maximum seconds to wait for the process (default 30).
-
-    Returns:
-        The combined stdout output, stripped of leading/trailing whitespace.
+    Call once at startup or at the top of any check that is Windows-only.
 
     Raises:
-        RuntimeError: If the process exits with a non-zero return code.
-    """
-    log.debug("run_powershell: %s", script[:120])
-    result = subprocess.run(
-        [
-            "powershell.exe",
-            "-NonInteractive",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"PowerShell exited {result.returncode}: {result.stderr.strip()}"
-        )
-    return result.stdout.strip()
-
-
-def read_registry(hive: str, key: str, value: str) -> Any:
-    """Read a single Windows registry value.
-
-    Args:
-        hive:  Registry hive abbreviation, e.g. "HKLM" or "HKCU".
-        key:   Registry key path, e.g. r"SOFTWARE\\Policies\\Microsoft\\Windows".
-        value: Value name to read.
-
-    Returns:
-        The registry value data, or None if the key/value does not exist.
+        WinPostureError: When ``sys.platform`` is not ``"win32"``.
     """
     if sys.platform != "win32":
-        log.warning("read_registry called on non-Windows platform — returning None")
-        return None
-
-    import winreg  # type: ignore[import]
-
-    hive_map: dict[str, int] = {
-        "HKLM": winreg.HKEY_LOCAL_MACHINE,
-        "HKCU": winreg.HKEY_CURRENT_USER,
-        "HKCR": winreg.HKEY_CLASSES_ROOT,
-        "HKU": winreg.HKEY_USERS,
-        "HKCC": winreg.HKEY_CURRENT_CONFIG,
-    }
-    hive_handle = hive_map.get(hive.upper())
-    if hive_handle is None:
-        raise ValueError(f"Unknown registry hive: {hive!r}")
-
-    try:
-        with winreg.OpenKey(hive_handle, key) as reg_key:
-            data, _ = winreg.QueryValueEx(reg_key, value)
-            return data
-    except FileNotFoundError:
-        log.debug("Registry key/value not found: %s\\%s\\%s", hive, key, value)
-        return None
-    except PermissionError:
-        log.warning("Permission denied reading registry: %s\\%s\\%s", hive, key, value)
-        return None
+        raise WinPostureError(
+            f"WinPosture requires Windows. Current platform: {sys.platform!r}"
+        )
 
 
-def ps_bool(script: str) -> bool:
-    """Run a PowerShell script that returns 'True' or 'False' and parse the result.
+# ---------------------------------------------------------------------------
+# Convenience
+# ---------------------------------------------------------------------------
+
+
+def ps_bool(command: str) -> bool:
+    """Run a PowerShell command and parse a ``True``/``False`` string result.
 
     Args:
-        script: PowerShell script whose last output is a boolean string.
+        command: PowerShell command whose last output line is ``True`` or
+                 ``False`` (case-insensitive).
 
     Returns:
-        True if output is "True", False otherwise.
+        ``True`` if the output is ``"true"`` (case-insensitive), else ``False``.
     """
-    output = run_powershell(script)
-    return output.strip().lower() == "true"
+    return run_powershell(command).lower() == "true"
