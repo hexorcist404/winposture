@@ -1,4 +1,4 @@
-"""Check: Miscellaneous settings — AutoPlay, Remote Registry, LLMNR."""
+"""Check: Miscellaneous settings — AutoPlay, Remote Registry."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ def run() -> list[CheckResult]:
     """Return miscellaneous security configuration checks.
 
     Returns:
-        list[CheckResult]: Results for AutoPlay, Remote Registry, and LLMNR.
-    """
+        list[CheckResult]: Results for AutoPlay and Remote Registry.
+"""
     # TODO: implement via registry reads and service status checks
     return [
         CheckResult(
@@ -34,15 +34,6 @@ def run() -> list[CheckResult]:
             status=Status.INFO,
             severity=Severity.HIGH,
             description="Checks whether the Remote Registry service is stopped and disabled.",
-            details="Not yet implemented.",
-            remediation="",
-        ),
-        CheckResult(
-            category=CATEGORY,
-            check_name="LLMNR Disabled",
-            status=Status.INFO,
-            severity=Severity.HIGH,
-            description="Checks whether LLMNR is disabled (mitigates Responder attacks).",
             details="Not yet implemented.",
             remediation="",
         ),
