@@ -1,31 +1,244 @@
-"""Check: Windows Update status."""
+"""Check: Windows Update status — last install date, pending updates, service state."""
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
+from winposture.exceptions import WinPostureError
 from winposture.models import CheckResult, Severity, Status
+from winposture.utils import run_powershell
 
 log = logging.getLogger(__name__)
 
-CATEGORY = "Updates"
+CATEGORY = "Patching"
+
+_FAIL_DAYS = 60   # CRITICAL: no updates installed in this many days
+_WARN_DAYS = 30   # HIGH: no updates installed in this many days
+
+# Get the most recently installed hotfix with a valid date.
+# Some hotfixes have a null InstalledOn; filter those out.
+_PS_LAST_HOTFIX = (
+    "$hf = Get-HotFix "
+    "| Where-Object { $_.InstalledOn -ne $null } "
+    "| Sort-Object InstalledOn -Descending "
+    "| Select-Object -First 1; "
+    "if ($hf) { $hf.InstalledOn.ToString('yyyy-MM-dd') } else { 'NONE' }"
+)
+
+_PS_WU_SERVICE = (
+    "(Get-Service -Name wuauserv -ErrorAction SilentlyContinue).Status"
+)
+
+# Query pending updates via COM. Returns count or 'UNAVAILABLE' on failure.
+_PS_PENDING = (
+    "try { "
+    "$s = New-Object -ComObject Microsoft.Update.Session; "
+    "$r = $s.CreateUpdateSearcher().Search(\"IsInstalled=0 and Type='Software'\"); "
+    "$r.Updates.Count "
+    "} catch { 'UNAVAILABLE' }"
+)
+
+
+def _now() -> datetime:
+    """Return current UTC time. Exists as a separate function to allow mocking in tests."""
+    return datetime.now(tz=timezone.utc)
 
 
 def run() -> list[CheckResult]:
     """Return Windows Update status checks.
 
     Returns:
-        list[CheckResult]: Results about pending/missing updates.
+        list[CheckResult]: Results for last update age, WU service, and pending count.
     """
-    # TODO: implement via COM (wuapi) or PSWindowsUpdate
-    return [
-        CheckResult(
+    results: list[CheckResult] = []
+    results.extend(_check_last_update())
+    results.extend(_check_wu_service())
+    results.extend(_check_pending_updates())
+    return results
+
+
+def _check_last_update() -> list[CheckResult]:
+    """Check when the last Windows Update was installed."""
+    try:
+        output = run_powershell(_PS_LAST_HOTFIX).strip()
+    except WinPostureError as exc:
+        return [_error("Last Windows Update", str(exc))]
+
+    if not output or output == "NONE":
+        return [CheckResult(
             category=CATEGORY,
-            check_name="Windows Update Status",
+            check_name="Last Windows Update",
+            status=Status.WARN,
+            severity=Severity.HIGH,
+            description="Checks when the most recent Windows Update was installed.",
+            details="No hotfixes with a valid install date were found in the hotfix log.",
+            remediation=(
+                "Run Windows Update manually: "
+                "Settings → Windows Update → Check for updates."
+            ),
+        )]
+
+    try:
+        last_update = datetime.strptime(output, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        return [_error("Last Windows Update", f"Could not parse date {output!r}: {exc}")]
+
+    now = _now()
+    age_days = (now - last_update).days
+
+    if age_days >= _FAIL_DAYS:
+        return [CheckResult(
+            category=CATEGORY,
+            check_name="Last Windows Update",
+            status=Status.FAIL,
+            severity=Severity.CRITICAL,
+            description="Checks when the most recent Windows Update was installed.",
+            details=(
+                f"Last update installed {age_days} days ago "
+                f"({last_update.strftime('%Y-%m-%d')}). "
+                f"System is {age_days - _FAIL_DAYS} days past the {_FAIL_DAYS}-day threshold."
+            ),
+            remediation=(
+                "Install all pending Windows Updates immediately. "
+                "Open: Start-Process ms-settings:windowsupdate"
+            ),
+        )]
+
+    if age_days >= _WARN_DAYS:
+        return [CheckResult(
+            category=CATEGORY,
+            check_name="Last Windows Update",
+            status=Status.WARN,
+            severity=Severity.HIGH,
+            description="Checks when the most recent Windows Update was installed.",
+            details=(
+                f"Last update installed {age_days} days ago "
+                f"({last_update.strftime('%Y-%m-%d')})."
+            ),
+            remediation=(
+                "Check for and install pending Windows Updates: "
+                "Start-Process ms-settings:windowsupdate"
+            ),
+        )]
+
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="Last Windows Update",
+        status=Status.PASS,
+        severity=Severity.CRITICAL,
+        description="Checks when the most recent Windows Update was installed.",
+        details=(
+            f"Last update installed {age_days} day(s) ago "
+            f"({last_update.strftime('%Y-%m-%d')})."
+        ),
+        remediation="",
+    )]
+
+
+def _check_wu_service() -> list[CheckResult]:
+    """Check whether the Windows Update service is running."""
+    try:
+        output = run_powershell(_PS_WU_SERVICE).strip()
+    except WinPostureError as exc:
+        return [_error("Windows Update Service", str(exc))]
+
+    if not output:
+        return [CheckResult(
+            category=CATEGORY,
+            check_name="Windows Update Service",
+            status=Status.ERROR,
+            severity=Severity.HIGH,
+            description="Checks whether the Windows Update (wuauserv) service is running.",
+            details="Could not determine Windows Update service status (service may not exist).",
+            remediation="Verify the service exists: Get-Service -Name wuauserv",
+        )]
+
+    running = output.lower() == "running"
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="Windows Update Service",
+        status=Status.PASS if running else Status.WARN,
+        severity=Severity.HIGH,
+        description="Checks whether the Windows Update (wuauserv) service is running.",
+        details=f"Windows Update service status: {output}.",
+        remediation=(
+            "" if running else
+            "Start the Windows Update service: Start-Service -Name wuauserv. "
+            "If disabled, change startup type: "
+            "Set-Service -Name wuauserv -StartupType Automatic"
+        ),
+    )]
+
+
+def _check_pending_updates() -> list[CheckResult]:
+    """Count Windows Updates that are available but not yet installed."""
+    try:
+        output = run_powershell(_PS_PENDING).strip()
+    except WinPostureError as exc:
+        return [_error("Pending Windows Updates", str(exc))]
+
+    if output == "UNAVAILABLE":
+        return [CheckResult(
+            category=CATEGORY,
+            check_name="Pending Windows Updates",
             status=Status.INFO,
             severity=Severity.HIGH,
-            description="Checks whether Windows Update is enabled and up to date.",
-            details="Not yet implemented.",
+            description="Counts Windows Updates that are available but not yet installed.",
+            details=(
+                "Could not query pending updates "
+                "(Windows Update COM object unavailable or access denied)."
+            ),
             remediation="",
-        )
-    ]
+        )]
+
+    try:
+        count = int(output)
+    except ValueError:
+        return [CheckResult(
+            category=CATEGORY,
+            check_name="Pending Windows Updates",
+            status=Status.INFO,
+            severity=Severity.HIGH,
+            description="Counts Windows Updates that are available but not yet installed.",
+            details=f"Unexpected output from pending update check: {output!r}",
+            remediation="",
+        )]
+
+    if count == 0:
+        return [CheckResult(
+            category=CATEGORY,
+            check_name="Pending Windows Updates",
+            status=Status.PASS,
+            severity=Severity.HIGH,
+            description="Counts Windows Updates that are available but not yet installed.",
+            details="No pending Windows Updates found.",
+            remediation="",
+        )]
+
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="Pending Windows Updates",
+        status=Status.FAIL,
+        severity=Severity.HIGH,
+        description="Counts Windows Updates that are available but not yet installed.",
+        details=f"{count} pending Windows Update(s) are available but not installed.",
+        remediation=(
+            f"Install {count} pending update(s): "
+            "Settings → Windows Update → Install now, or: "
+            "Install-WindowsUpdate -AcceptAll (requires PSWindowsUpdate module)"
+        ),
+    )]
+
+
+def _error(check_name: str, details: str) -> CheckResult:
+    """Return a synthetic ERROR result for a failed sub-check."""
+    return CheckResult(
+        category=CATEGORY,
+        check_name=check_name,
+        status=Status.ERROR,
+        severity=Severity.INFO,
+        description="An error occurred while running this check.",
+        details=details,
+        remediation="Run with --log-level DEBUG for more detail.",
+    )
