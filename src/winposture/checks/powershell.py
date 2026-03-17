@@ -1,49 +1,228 @@
-"""Check: PowerShell execution policy, script block logging, and constrained mode."""
+"""Check: PowerShell security — execution policy, logging, constrained mode, PSv2."""
 
 from __future__ import annotations
 
 import logging
 
+from winposture.exceptions import WinPostureError
 from winposture.models import CheckResult, Severity, Status
+from winposture.utils import run_powershell
 
 log = logging.getLogger(__name__)
 
 CATEGORY = "PowerShell"
+
+# Policies that bypass script execution restrictions entirely
+_RISKY_POLICIES = {"unrestricted", "bypass"}
+
+_PS_EXEC_POLICY = "Get-ExecutionPolicy -Scope LocalMachine"
+
+_SBL_KEY = "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging"
+_PS_SBL = (
+    f"$v = (Get-ItemProperty -LiteralPath '{_SBL_KEY}' "
+    "-ErrorAction SilentlyContinue).EnableScriptBlockLogging; "
+    "if ($null -eq $v) { 'NOTSET' } else { [string]$v }"
+)
+
+_ML_KEY = "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ModuleLogging"
+_PS_ML = (
+    f"$v = (Get-ItemProperty -LiteralPath '{_ML_KEY}' "
+    "-ErrorAction SilentlyContinue).EnableModuleLogging; "
+    "if ($null -eq $v) { 'NOTSET' } else { [string]$v }"
+)
+
+_PS_CLM = "$ExecutionContext.SessionState.LanguageMode"
+
+_PS_V2 = (
+    "try { "
+    "(Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root "
+    "-ErrorAction SilentlyContinue).State "
+    "} catch { 'UNAVAILABLE' }"
+)
 
 
 def run() -> list[CheckResult]:
     """Return PowerShell security configuration checks.
 
     Returns:
-        list[CheckResult]: Results for execution policy, logging, and constrained mode.
+        list[CheckResult]: Results for execution policy, script block logging,
+        module logging, constrained language mode, and PSv2 availability.
     """
-    # TODO: implement via Get-ExecutionPolicy and registry checks
-    return [
-        CheckResult(
+    results: list[CheckResult] = []
+    results.extend(_check_execution_policy())
+    results.extend(_check_script_block_logging())
+    results.extend(_check_module_logging())
+    results.extend(_check_constrained_language())
+    results.extend(_check_psv2())
+    return results
+
+
+def _check_execution_policy() -> list[CheckResult]:
+    """Check the LocalMachine PowerShell execution policy."""
+    try:
+        output = run_powershell(_PS_EXEC_POLICY).strip()
+    except WinPostureError as exc:
+        return [_error("PowerShell Execution Policy", str(exc))]
+
+    policy = output.lower()
+    risky = policy in _RISKY_POLICIES
+
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="PowerShell Execution Policy",
+        status=Status.WARN if risky else Status.INFO,
+        severity=Severity.MEDIUM,
+        description="Checks the LocalMachine PowerShell execution policy.",
+        details=(
+            f"Execution policy is '{output}' — allows any script to run without restriction."
+            if risky else
+            f"Execution policy is '{output}'."
+        ),
+        remediation=(
+            "" if not risky else
+            f"Set a more restrictive policy: Set-ExecutionPolicy RemoteSigned -Scope LocalMachine. "
+            f"Current policy '{output}' allows unsigned scripts to run freely."
+        ),
+    )]
+
+
+def _check_script_block_logging() -> list[CheckResult]:
+    """Check whether PowerShell Script Block Logging is enabled."""
+    try:
+        output = run_powershell(_PS_SBL).strip()
+    except WinPostureError as exc:
+        return [_error("PowerShell Script Block Logging", str(exc))]
+
+    enabled = output == "1"
+
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="PowerShell Script Block Logging",
+        status=Status.PASS if enabled else Status.WARN,
+        severity=Severity.MEDIUM,
+        description="Checks whether PowerShell Script Block Logging is enabled (critical for forensics/IR).",
+        details=(
+            "Script Block Logging is enabled — PowerShell commands are logged to the event log."
+            if enabled else
+            "Script Block Logging is disabled. Malicious PowerShell activity may go undetected."
+        ),
+        remediation=(
+            "" if enabled else
+            "Enable via Group Policy: Computer Configuration → Administrative Templates → "
+            "Windows Components → Windows PowerShell → Turn on PowerShell Script Block Logging. "
+            "Or via registry: Set-ItemProperty -Path "
+            f"'{_SBL_KEY}' -Name EnableScriptBlockLogging -Value 1 -Type DWord -Force"
+        ),
+    )]
+
+
+def _check_module_logging() -> list[CheckResult]:
+    """Check whether PowerShell Module Logging is enabled."""
+    try:
+        output = run_powershell(_PS_ML).strip()
+    except WinPostureError as exc:
+        return [_error("PowerShell Module Logging", str(exc))]
+
+    enabled = output == "1"
+
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="PowerShell Module Logging",
+        status=Status.PASS if enabled else Status.WARN,
+        severity=Severity.MEDIUM,
+        description="Checks whether PowerShell Module Logging is enabled.",
+        details=(
+            "Module Logging is enabled — module pipeline execution events are logged."
+            if enabled else
+            "Module Logging is disabled. Detailed module activity is not recorded."
+        ),
+        remediation=(
+            "" if enabled else
+            "Enable via Group Policy: Computer Configuration → Administrative Templates → "
+            "Windows Components → Windows PowerShell → Turn on Module Logging. "
+            "Or via registry: Set-ItemProperty -Path "
+            f"'{_ML_KEY}' -Name EnableModuleLogging -Value 1 -Type DWord -Force"
+        ),
+    )]
+
+
+def _check_constrained_language() -> list[CheckResult]:
+    """Report the current PowerShell language mode (informational)."""
+    try:
+        output = run_powershell(_PS_CLM).strip()
+    except WinPostureError as exc:
+        return [_error("PowerShell Constrained Language Mode", str(exc))]
+
+    is_constrained = output.lower() == "constrainedlanguage"
+
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="PowerShell Constrained Language Mode",
+        status=Status.PASS if is_constrained else Status.INFO,
+        severity=Severity.LOW,
+        description="Checks whether PowerShell Constrained Language Mode is active.",
+        details=f"PowerShell language mode: {output}.",
+        remediation="",
+    )]
+
+
+def _check_psv2() -> list[CheckResult]:
+    """Check whether PowerShell v2 is installed (downgrade attack vector)."""
+    try:
+        output = run_powershell(_PS_V2).strip()
+    except WinPostureError as exc:
+        return [_error("PowerShell v2", str(exc))]
+
+    state = output.lower()
+
+    # Enabled / EnabledWithPayloadRemoved both mean v2 engine is present
+    if state in ("enabled", "enabledwithpayloadremoved"):
+        return [CheckResult(
             category=CATEGORY,
-            check_name="PowerShell Execution Policy",
-            status=Status.INFO,
+            check_name="PowerShell v2",
+            status=Status.WARN,
             severity=Severity.MEDIUM,
-            description="Checks the effective PowerShell execution policy.",
-            details="Not yet implemented.",
-            remediation="",
-        ),
-        CheckResult(
+            description="Checks whether PowerShell v2 is installed (downgrade attack vector).",
+            details=(
+                "PowerShell v2 is installed. Attackers can invoke 'powershell -Version 2' "
+                "to bypass Script Block Logging and other v5+ security controls."
+            ),
+            remediation=(
+                "Remove PowerShell v2: "
+                "Disable-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root"
+            ),
+        )]
+
+    if state in ("disabled", "unavailable"):
+        return [CheckResult(
             category=CATEGORY,
-            check_name="PowerShell Script Block Logging",
-            status=Status.INFO,
+            check_name="PowerShell v2",
+            status=Status.PASS,
             severity=Severity.MEDIUM,
-            description="Checks whether PowerShell script block logging is enabled.",
-            details="Not yet implemented.",
+            description="Checks whether PowerShell v2 is installed (downgrade attack vector).",
+            details="PowerShell v2 is not installed or disabled.",
             remediation="",
-        ),
-        CheckResult(
-            category=CATEGORY,
-            check_name="PowerShell Constrained Language Mode",
-            status=Status.INFO,
-            severity=Severity.LOW,
-            description="Checks whether PowerShell is running in Constrained Language Mode.",
-            details="Not yet implemented.",
-            remediation="",
-        ),
-    ]
+        )]
+
+    # State could not be determined (e.g. non-Windows or missing module)
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="PowerShell v2",
+        status=Status.INFO,
+        severity=Severity.MEDIUM,
+        description="Checks whether PowerShell v2 is installed (downgrade attack vector).",
+        details=f"Could not determine PowerShell v2 status (state: '{output}').",
+        remediation="",
+    )]
+
+
+def _error(check_name: str, details: str) -> CheckResult:
+    return CheckResult(
+        category=CATEGORY,
+        check_name=check_name,
+        status=Status.ERROR,
+        severity=Severity.INFO,
+        description="An error occurred while running this check.",
+        details=details,
+        remediation="Run with --log-level DEBUG for more detail.",
+    )
