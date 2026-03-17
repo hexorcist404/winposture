@@ -171,11 +171,11 @@ class TestCheckDomain:
 
     def test_domain_joined_returns_info(self):
         with patch("winposture.checks.os_info.run_powershell_json",
-                   return_value=_domain_json(part_of_domain=True, domain="corp.example.com")):
+                   return_value=_domain_json(part_of_domain=True, domain="CORP")):
             results = os_info._check_domain()
         assert results[0].status == Status.INFO
         assert "Domain-joined" in results[0].details
-        assert "corp.example.com" in results[0].details
+        assert "CORP" in results[0].details
 
     def test_ps_error_returns_error_result(self):
         with patch("winposture.checks.os_info.run_powershell_json",
