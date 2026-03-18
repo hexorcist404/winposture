@@ -3,96 +3,583 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WinPosture Report — {{ report.hostname }}</title>
+  <title>WinPosture Security Audit &mdash; {{ report.hostname }}</title>
   <style>
+    /* ── Reset ─────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Base ──────────────────────────────────────────────────── */
     body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: #0f0f0f;
-      color: #e0e0e0;
-      padding: 2rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      font-size: 14px;
+      line-height: 1.6;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
-    h1 { color: #4fc3f7; margin-bottom: 0.25rem; }
-    .meta { color: #888; font-size: 0.9rem; margin-bottom: 2rem; }
-    .score-box {
+
+    /* ── Page wrapper ──────────────────────────────────────────── */
+    .page {
+      max-width: 1100px;
+      margin: 1.5rem auto;
+      background: #ffffff;
+      border-radius: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.10);
+      overflow: hidden;
+    }
+
+    /* ── Report header ─────────────────────────────────────────── */
+    .report-header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #1d4ed8 100%);
+      color: #ffffff;
+      padding: 2rem 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 2rem;
+    }
+    .header-brand {
+      font-size: .8rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      opacity: .75;
+      margin-bottom: .35rem;
+    }
+    .header-title {
+      font-size: 1.55rem;
+      font-weight: 700;
+      margin-bottom: .75rem;
+    }
+    .header-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem 1.5rem;
+      font-size: .8rem;
+      opacity: .85;
+    }
+    .header-meta span::before { margin-right: .3em; }
+
+    /* ── Score gauge (CSS conic-gradient) ──────────────────────── */
+    .gauge-wrap { text-align: center; flex-shrink: 0; }
+    .gauge {
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto .4rem;
+      position: relative;
+    }
+    /* Grade colour sets --gauge-color via class */
+    .gauge-A { background: conic-gradient(#059669 {{ report.score }}%, #e2f8ef {{ report.score }}%); }
+    .gauge-B { background: conic-gradient(#16a34a {{ report.score }}%, #e2f5e6 {{ report.score }}%); }
+    .gauge-C { background: conic-gradient(#ca8a04 {{ report.score }}%, #fef9e7 {{ report.score }}%); }
+    .gauge-D { background: conic-gradient(#ea580c {{ report.score }}%, #fff4ec {{ report.score }}%); }
+    .gauge-F { background: conic-gradient(#dc2626 {{ report.score }}%, #fff0f0 {{ report.score }}%); }
+    .gauge-inner {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .gauge-num  { font-size: 1.8rem; font-weight: 800; color: #1e293b; }
+    .gauge-denom { font-size: .7rem; color: #64748b; }
+    .gauge-letter { font-size: 1rem; font-weight: 700; margin-top: .1rem; }
+    .gauge-A .gauge-letter { color: #059669; }
+    .gauge-B .gauge-letter { color: #16a34a; }
+    .gauge-C .gauge-letter { color: #ca8a04; }
+    .gauge-D .gauge-letter { color: #ea580c; }
+    .gauge-F .gauge-letter { color: #dc2626; }
+    .gauge-label {
+      font-size: .8rem;
+      font-weight: 600;
+      color: rgba(255,255,255,.85);
+      letter-spacing: .04em;
+    }
+
+    /* ── Stats bar ─────────────────────────────────────────────── */
+    .stats-bar {
+      display: flex;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .stat-box {
+      flex: 1;
+      padding: .9rem 1rem;
+      text-align: center;
+      border-right: 1px solid #e2e8f0;
+    }
+    .stat-box:last-child { border-right: none; }
+    .stat-num { font-size: 1.6rem; font-weight: 800; line-height: 1; }
+    .stat-lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin-top: .15rem; }
+    .stat-total .stat-num { color: #1d4ed8; }
+    .stat-pass  .stat-num { color: #059669; }
+    .stat-fail  .stat-num { color: #dc2626; }
+    .stat-warn  .stat-num { color: #d97706; }
+
+    /* ── Section ───────────────────────────────────────────────── */
+    section { padding: 1.75rem 2.5rem; border-bottom: 1px solid #e2e8f0; }
+    section:last-of-type { border-bottom: none; }
+    .section-title {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: #64748b;
+      margin-bottom: 1rem;
+      padding-bottom: .5rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    /* ── Executive summary ─────────────────────────────────────── */
+    .exec-summary { color: #374151; max-width: 80ch; margin-bottom: 1.25rem; }
+
+    /* ── Callout ───────────────────────────────────────────────── */
+    .callout {
+      border-radius: 5px;
+      padding: 1rem 1.25rem;
+      margin-bottom: .75rem;
+    }
+    .callout-alert {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-left: 4px solid #dc2626;
+    }
+    .callout-title {
+      font-size: .8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #991b1b;
+      margin-bottom: .6rem;
+    }
+    .callout ul { list-style: none; display: flex; flex-direction: column; gap: .4rem; }
+    .callout li { display: flex; align-items: flex-start; gap: .5rem; flex-wrap: wrap; font-size: .85rem; color: #374151; }
+    .callout li .rem-text { color: #6b7280; margin-left: .25rem; }
+
+    /* ── Badges ────────────────────────────────────────────────── */
+    .badge {
       display: inline-block;
-      padding: 1rem 2rem;
-      border-radius: 8px;
-      margin-bottom: 2rem;
-      font-size: 1.4rem;
-      font-weight: bold;
+      padding: .12rem .45rem;
+      border-radius: 3px;
+      font-size: .7rem;
+      font-weight: 700;
+      white-space: nowrap;
+      vertical-align: middle;
     }
-    .score-excellent { background: #1b5e20; color: #a5d6a7; }
-    .score-good      { background: #2e7d32; color: #c8e6c9; }
-    .score-fair      { background: #f57f17; color: #fff9c4; }
-    .score-poor      { background: #b71c1c; color: #ffcdd2; }
-    .score-critical  { background: #4a0000; color: #ff8a80; }
-    .summary { display: flex; gap: 1rem; margin-bottom: 2rem; }
-    .stat { padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: bold; }
-    .stat-pass { background: #1b5e20; color: #a5d6a7; }
-    .stat-fail { background: #b71c1c; color: #ffcdd2; }
-    .stat-warn { background: #e65100; color: #ffe0b2; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th { background: #1e1e1e; color: #4fc3f7; text-align: left; padding: 0.6rem 0.8rem; }
-    tr:nth-child(even) { background: #1a1a1a; }
-    td { padding: 0.5rem 0.8rem; border-bottom: 1px solid #2a2a2a; vertical-align: top; }
-    .status-PASS  { color: #66bb6a; font-weight: bold; }
-    .status-FAIL  { color: #ef5350; font-weight: bold; }
-    .status-WARN  { color: #ffa726; font-weight: bold; }
-    .status-INFO  { color: #4fc3f7; }
-    .status-ERROR { color: #ce93d8; font-weight: bold; }
-    .sev-CRITICAL { color: #ef5350; font-weight: bold; }
-    .sev-HIGH     { color: #ff7043; }
-    .sev-MEDIUM   { color: #ffa726; }
-    .sev-LOW      { color: #29b6f6; }
-    .sev-INFO     { color: #78909c; }
-    footer { margin-top: 2rem; color: #555; font-size: 0.8rem; }
+    .badge-PASS  { background: #dcfce7; color: #15803d; }
+    .badge-FAIL  { background: #fee2e2; color: #b91c1c; }
+    .badge-WARN  { background: #fef3c7; color: #b45309; }
+    .badge-INFO  { background: #dbeafe; color: #1d4ed8; }
+    .badge-ERROR { background: #f3e8ff; color: #6d28d9; }
+
+    .sev {
+      display: inline-block;
+      padding: .1rem .4rem;
+      border-radius: 3px;
+      font-size: .7rem;
+      font-weight: 600;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .sev-CRITICAL { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+    .sev-HIGH     { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
+    .sev-MEDIUM   { background: #fefce8; color: #854d0e; border: 1px solid #fde047; }
+    .sev-LOW      { background: #eff6ff; color: #1e40af; border: 1px solid #93c5fd; }
+    .sev-INFO     { background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; }
+
+    /* ── Category section ──────────────────────────────────────── */
+    .cat-block { margin-bottom: 1.5rem; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; }
+    .cat-block:last-child { margin-bottom: 0; }
+    .cat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: .65rem 1rem;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+    }
+    .cat-header::-webkit-details-marker { display: none; }
+    .cat-name { font-weight: 600; font-size: .9rem; color: #1e293b; }
+    .cat-meta { display: flex; align-items: center; gap: .75rem; font-size: .8rem; color: #64748b; }
+    .cat-score { font-weight: 700; }
+    .cat-score-A { color: #059669; }
+    .cat-score-B { color: #16a34a; }
+    .cat-score-C { color: #ca8a04; }
+    .cat-score-D { color: #ea580c; }
+    .cat-score-F { color: #dc2626; }
+    .cat-chevron { font-size: .65rem; color: #94a3b8; }
+    details.cat-block[open] .cat-chevron::after { content: "▲"; }
+    details.cat-block:not([open]) .cat-chevron::after { content: "▼"; }
+
+    /* ── Category table ────────────────────────────────────────── */
+    .cat-table { width: 100%; border-collapse: collapse; }
+    .cat-table thead th {
+      background: #f8fafc;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #64748b;
+      padding: .55rem .75rem;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .cat-table tbody td {
+      padding: .6rem .75rem;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+      font-size: .85rem;
+    }
+    .cat-table tbody tr:last-child td { border-bottom: none; }
+    .row-FAIL { background: #fff8f8; }
+    .row-WARN { background: #fffdf0; }
+    .row-INFO { background: #f8fbff; }
+    .row-ERROR { background: #fdf8ff; }
+
+    .check-name { font-weight: 500; }
+    .check-desc { font-size: .78rem; color: #64748b; margin-top: .15rem; }
+    .details-text { font-size: .8rem; color: #374151; white-space: pre-wrap; word-break: break-word; }
+
+    details.row-detail summary {
+      list-style: none;
+      cursor: pointer;
+      font-size: .78rem;
+      color: #2563eb;
+    }
+    details.row-detail summary::-webkit-details-marker { display: none; }
+    details.row-detail[open] .rem-block { margin-top: .4rem; }
+    .rem-block {
+      font-size: .78rem;
+      color: #374151;
+      background: #f8fafc;
+      border-left: 3px solid #93c5fd;
+      padding: .4rem .6rem;
+      margin-top: .4rem;
+      border-radius: 0 3px 3px 0;
+    }
+
+    /* ── Detailed findings cards ───────────────────────────────── */
+    .finding {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    .finding:last-child { margin-bottom: 0; }
+    .finding-FAIL { border-color: #fca5a5; }
+    .finding-WARN { border-color: #fde68a; }
+
+    .finding-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: .5rem;
+      padding: .7rem 1rem;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .finding-FAIL .finding-header { background: #fff5f5; border-bottom-color: #fecaca; }
+    .finding-WARN .finding-header { background: #fffbeb; border-bottom-color: #fde68a; }
+    .finding-title { font-weight: 600; font-size: .9rem; color: #1e293b; margin-left: .25rem; flex: 1; }
+    .finding-cat   { font-size: .75rem; color: #94a3b8; margin-left: auto; }
+
+    .finding-body { padding: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1.5rem; }
+    .finding-field dt { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: .25rem; }
+    .finding-field dd { font-size: .85rem; color: #374151; white-space: pre-wrap; word-break: break-word; }
+    .finding-field.full-width { grid-column: 1 / -1; }
+
+    /* ── Appendix table ────────────────────────────────────────── */
+    .app-table { width: 100%; border-collapse: collapse; }
+    .app-table thead th {
+      background: #f8fafc;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #64748b;
+      padding: .5rem .75rem;
+      text-align: left;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .app-table tbody td {
+      padding: .5rem .75rem;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+      font-size: .82rem;
+    }
+    .app-table tbody tr:last-child td { border-bottom: none; }
+
+    /* ── Footer ────────────────────────────────────────────────── */
+    .report-footer {
+      padding: 1rem 2.5rem;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+    .footer-brand { font-size: .78rem; color: #475569; }
+    .footer-brand strong { color: #1e293b; }
+    .footer-disclaimer {
+      font-size: .72rem;
+      color: #94a3b8;
+      max-width: 60ch;
+      font-style: italic;
+    }
+
+    /* ── Print ─────────────────────────────────────────────────── */
+    @media print {
+      @page { size: A4; margin: 15mm 12mm; }
+      body { background: white; font-size: 10pt; }
+      .page { box-shadow: none; border-radius: 0; margin: 0; max-width: 100%; }
+      .report-header { background: #1d4ed8 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      section { break-inside: avoid; }
+      .finding { break-inside: avoid; page-break-inside: avoid; }
+      .cat-block { break-inside: avoid; }
+      details.cat-block { display: block; }
+      details.cat-block summary { display: flex; }
+      details.row-detail { display: block; }
+      details.row-detail summary { display: none; }
+      details.row-detail .rem-block { display: block; }
+    }
+
+    @media (max-width: 700px) {
+      .report-header { flex-direction: column; }
+      .stats-bar { flex-wrap: wrap; }
+      .stat-box { min-width: 50%; }
+      .finding-body { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <h1>WinPosture Security Audit</h1>
-  <p class="meta">
-    Host: <strong>{{ report.hostname }}</strong> &nbsp;|&nbsp;
-    OS: {{ report.os_version }} &nbsp;|&nbsp;
-    Scanned: {{ report.scan_timestamp.strftime('%Y-%m-%d %H:%M UTC') }} &nbsp;|&nbsp;
-    Duration: {{ "%.1f"|format(report.scan_duration) }}s
-  </p>
+<div class="page">
 
-  <div class="score-box score-{{ score_label | lower }}">
-    {{ report.score }}/100 &mdash; {{ score_label }}
+  {# ── HEADER ──────────────────────────────────────────────────── #}
+  <header class="report-header">
+    <div class="header-left">
+      <div class="header-brand">WinPosture Security Audit Report</div>
+      <div class="header-title">{{ report.hostname }}</div>
+      <div class="header-meta">
+        <span>OS: {{ report.os_version }}</span>
+        <span>Scanned: {{ generated_at }}</span>
+        <span>Duration: {{ "%.1f"|format(report.scan_duration) }}s</span>
+      </div>
+    </div>
+    <div class="gauge-wrap">
+      <div class="gauge gauge-{{ score_grade }}">
+        <div class="gauge-inner">
+          <span class="gauge-num">{{ report.score }}</span>
+          <span class="gauge-denom">/100</span>
+          <span class="gauge-letter">{{ score_grade }}</span>
+        </div>
+      </div>
+      <div class="gauge-label">{{ score_label }}</div>
+    </div>
+  </header>
+
+  {# ── STATS BAR ────────────────────────────────────────────────── #}
+  <div class="stats-bar">
+    <div class="stat-box stat-total">
+      <div class="stat-num">{{ report.results | length }}</div>
+      <div class="stat-lbl">Total Checks</div>
+    </div>
+    <div class="stat-box stat-pass">
+      <div class="stat-num">{{ report.pass_count }}</div>
+      <div class="stat-lbl">Passed</div>
+    </div>
+    <div class="stat-box stat-fail">
+      <div class="stat-num">{{ report.fail_count }}</div>
+      <div class="stat-lbl">Failed</div>
+    </div>
+    <div class="stat-box stat-warn">
+      <div class="stat-num">{{ report.warn_count }}</div>
+      <div class="stat-lbl">Warnings</div>
+    </div>
   </div>
 
-  <div class="summary">
-    <div class="stat stat-pass">PASS: {{ report.pass_count }}</div>
-    <div class="stat stat-fail">FAIL: {{ report.fail_count }}</div>
-    <div class="stat stat-warn">WARN: {{ report.warn_count }}</div>
-  </div>
+  {# ── EXECUTIVE SUMMARY ────────────────────────────────────────── #}
+  <section>
+    <h2 class="section-title">Executive Summary</h2>
+    <p class="exec-summary">{{ executive_summary }}</p>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Category</th>
-        <th>Check</th>
-        <th>Status</th>
-        <th>Severity</th>
-        <th>Details</th>
-        <th>Remediation</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for result in report.results | sort(attribute='category') %}
-      <tr>
-        <td>{{ result.category }}</td>
-        <td title="{{ result.description }}">{{ result.check_name }}</td>
-        <td class="status-{{ result.status.value }}">{{ result.status.value }}</td>
-        <td class="sev-{{ result.severity.value }}">{{ result.severity.value }}</td>
-        <td>{{ result.details }}</td>
-        <td>{{ result.remediation }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    {% if top_findings %}
+    <div class="callout callout-alert">
+      <div class="callout-title">Critical &amp; High Priority Findings</div>
+      <ul>
+        {% for f in top_findings %}
+        <li>
+          <span class="badge badge-{{ f.status.value }}">{{ f.status.value }}</span>
+          <span class="sev sev-{{ f.severity.value }}">{{ f.severity.value }}</span>
+          <strong>{{ f.check_name }}</strong>
+          {% if f.remediation %}
+          <span class="rem-text">&mdash; {{ f.remediation }}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </section>
 
-  <footer>Generated by WinPosture &mdash; <a href="https://github.com/yourname/winposture" style="color:#4fc3f7;">github.com/yourname/winposture</a></footer>
+  {# ── CATEGORY BREAKDOWN ───────────────────────────────────────── #}
+  <section>
+    <h2 class="section-title">Category Breakdown</h2>
+    {% for cat in category_data %}
+    <details class="cat-block" open>
+      <summary class="cat-header">
+        <span class="cat-name">{{ cat.name }}</span>
+        <span class="cat-meta">
+          {% if cat.fail_count %}<span class="badge badge-FAIL">{{ cat.fail_count }} failed</span>{% endif %}
+          {% if cat.warn_count %}<span class="badge badge-WARN">{{ cat.warn_count }} warn</span>{% endif %}
+          <span class="cat-score cat-score-{{ cat.grade }}">{{ cat.score }}/100 &nbsp;{{ cat.grade }}</span>
+          <span class="cat-chevron"></span>
+        </span>
+      </summary>
+      <table class="cat-table">
+        <thead>
+          <tr>
+            <th style="width:6%">Status</th>
+            <th style="width:8%">Severity</th>
+            <th style="width:28%">Check</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in cat.results %}
+          <tr class="row-{{ r.status.value }}">
+            <td><span class="badge badge-{{ r.status.value }}">{{ r.status.value }}</span></td>
+            <td><span class="sev sev-{{ r.severity.value }}">{{ r.severity.value }}</span></td>
+            <td>
+              <div class="check-name">{{ r.check_name }}</div>
+              <div class="check-desc">{{ r.description }}</div>
+            </td>
+            <td>
+              <div class="details-text">{{ r.details }}</div>
+              {% if r.remediation %}
+              <details class="row-detail">
+                <summary>&#9656; Remediation</summary>
+                <div class="rem-block">{{ r.remediation }}</div>
+              </details>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endfor %}
+  </section>
+
+  {# ── DETAILED FINDINGS ────────────────────────────────────────── #}
+  {% if fail_warn_results %}
+  <section>
+    <h2 class="section-title">Detailed Findings</h2>
+    {% for r in fail_warn_results %}
+    <div class="finding finding-{{ r.status.value }}">
+      <div class="finding-header">
+        <span class="badge badge-{{ r.status.value }}">{{ r.status.value }}</span>
+        <span class="sev sev-{{ r.severity.value }}">{{ r.severity.value }}</span>
+        <span class="finding-title">{{ r.check_name }}</span>
+        <span class="finding-cat">{{ r.category }}</span>
+      </div>
+      <div class="finding-body">
+        <div class="finding-field">
+          <dt>Description</dt>
+          <dd>{{ r.description }}</dd>
+        </div>
+        <div class="finding-field">
+          <dt>Finding</dt>
+          <dd>{{ r.details }}</dd>
+        </div>
+        {% if r.remediation %}
+        <div class="finding-field full-width">
+          <dt>Remediation</dt>
+          <dd>{{ r.remediation }}</dd>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# ── APPENDIX A — SYSTEM INVENTORY ───────────────────────────── #}
+  {% if info_results %}
+  <section>
+    <h2 class="section-title">Appendix A &mdash; System Inventory</h2>
+    <table class="app-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Item</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in info_results | sort(attribute='category') %}
+        <tr>
+          <td>{{ r.category }}</td>
+          <td>{{ r.check_name }}</td>
+          <td style="white-space: pre-wrap; word-break: break-word;">{{ r.details }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {# ── APPENDIX B — FULL CHECK LIST ─────────────────────────────── #}
+  <section>
+    <h2 class="section-title">Appendix B &mdash; Full Check List</h2>
+    <table class="app-table">
+      <thead>
+        <tr>
+          <th style="width:5%">Status</th>
+          <th style="width:8%">Severity</th>
+          <th style="width:16%">Category</th>
+          <th>Check Name</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in report.results | sort(attribute='category') %}
+        <tr>
+          <td><span class="badge badge-{{ r.status.value }}">{{ r.status.value }}</span></td>
+          <td><span class="sev sev-{{ r.severity.value }}">{{ r.severity.value }}</span></td>
+          <td>{{ r.category }}</td>
+          <td>{{ r.check_name }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {# ── FOOTER ───────────────────────────────────────────────────── #}
+  <footer class="report-footer">
+    <div class="footer-brand">
+      Generated by <strong>WinPosture v{{ version }}</strong>
+      on {{ generated_at }}
+    </div>
+    <div class="footer-disclaimer">
+      This report is for informational purposes only. It does not constitute
+      a complete security assessment. Review all findings with a qualified
+      security professional before taking remediation actions.
+    </div>
+  </footer>
+
+</div>
 </body>
 </html>
