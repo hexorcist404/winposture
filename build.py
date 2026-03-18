@@ -112,6 +112,7 @@ def build(use_icon: bool = True) -> int:
         "--name", "winposture",
         "--add-data", f"{templates_src};templates",
         "--paths", str(ROOT / "src"),
+        "--collect-submodules", "winposture.checks",
         "--noconfirm",
         "--clean",
         str(entry),

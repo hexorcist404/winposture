@@ -49,6 +49,7 @@ class CheckResult:
     details: str
     remediation: str = ""
     check_duration: float = 0.0  # seconds the parent module took to run
+    cis_reference: str = ""      # CIS Benchmark control ID, e.g. "CIS 9.1.1"
 
 
 @dataclass

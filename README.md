@@ -97,6 +97,17 @@ winposture
 
 ---
 
+## Authorized Use Notice
+
+> **WinPosture is a READ-ONLY auditing tool.**  It does not modify any system
+> settings, write to the registry, or make network connections.  All data stays
+> on the machine being audited.
+>
+> **Only run WinPosture on systems you own or have explicit written authorization
+> to audit.**  Unauthorized use may violate computer fraud laws in your jurisdiction.
+
+---
+
 ## Usage
 
 ```
@@ -105,14 +116,22 @@ winposture [OPTIONS]
 Options:
   --html PATH          Save a self-contained HTML report to PATH
   --json PATH          Save a JSON report to PATH
+  --baseline FILE      Save current scan as a JSON baseline for future comparisons
+  --compare  FILE      Compare current scan against a saved baseline
+  --profile  FILE      Load a custom check profile from a TOML file
   --category CATS      Comma-separated list of categories to audit
                        (e.g. firewall,encryption,patching)
+  --dry-run            List check modules that would run without executing them
   --verbose            Show detail for every check, including PASSes
   --no-color           Disable Rich color output (for CI / log files)
-  --log-level LEVEL    Logging verbosity: DEBUG, INFO, WARNING (default),
-                       ERROR, CRITICAL
+  --log-level LEVEL    Logging verbosity: DEBUG, INFO, WARNING (default), ERROR
   --version            Show version and exit
   -h, --help           Show this help message and exit
+
+Exit codes:
+  0  Score >= 70 (passing)
+  1  Score < 70 (failing)
+  2  Fatal scan error
 ```
 
 ### Examples
@@ -133,9 +152,45 @@ winposture --category firewall,patching
 # Show pass/fail details for every check
 winposture --verbose
 
-# Silent mode for scripts (exits 0 if clean, 1 if failures)
+# Silent mode for scripts (exits 0 if score>=70, 1 if score<70, 2 on error)
 winposture --no-color --log-level ERROR
 echo Exit code: %ERRORLEVEL%
+
+# Save a baseline, then compare on the next run
+winposture --baseline baseline.json
+winposture --compare  baseline.json
+
+# Apply a custom check profile (e.g. for MSP clients)
+winposture --profile myprofile.toml
+
+# List which checks would run without executing anything
+winposture --dry-run
+```
+
+### Custom Profiles (`winposture.toml`)
+
+Create a `winposture.toml` in your working directory (or pass `--profile FILE`)
+to customise scan behaviour:
+
+```toml
+[profile]
+name = "MSP-Baseline"
+
+[disabled_checks]
+# Skip checks irrelevant to this environment
+checks = [
+    "SMBv1 Disabled",
+    "Firewall — Public Default Inbound Action",
+]
+
+[severity_overrides]
+# Downgrade noisy low-risk checks
+"Defender Tamper Protection" = "LOW"
+
+[thresholds]
+# Allow 45 days between updates before warning (default: 30)
+max_update_age_warn = 45
+max_update_age_fail = 90
 ```
 
 ---
