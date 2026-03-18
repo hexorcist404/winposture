@@ -193,8 +193,13 @@ class Reporter:
         self._print_top_issues(console, report)
         self._print_footer(console, report, html_path, json_path)
 
-    def save_html(self, report: AuditReport, path: str) -> None:
-        """Render and save an HTML report via the Jinja2 template."""
+    def generate_html_report(self, report: AuditReport, path: str) -> None:
+        """Render and save a self-contained HTML report via the Jinja2 template.
+
+        Args:
+            report: Completed :class:`~winposture.models.AuditReport`.
+            path:   Destination file path for the HTML file.
+        """
         try:
             from jinja2 import Environment, FileSystemLoader, select_autoescape
         except ImportError:
@@ -212,18 +217,17 @@ class Reporter:
             log.error("Could not load HTML template: %s", exc)
             return
 
-        letter, label = score_grade(report.score)
-        html = template.render(
-            report=report,
-            score_label=label,
-            score_grade=letter,
-            status_colors={s.value: c for s, c in _STATUS_COLOR.items()},
-        )
+        html = template.render(**self._build_template_context(report))
         Path(path).write_text(html, encoding="utf-8")
         log.info("HTML report saved to %s", path)
 
-    def save_json(self, report: AuditReport, path: str) -> None:
-        """Serialize the AuditReport to JSON."""
+    def generate_json_report(self, report: AuditReport, path: str) -> None:
+        """Serialize the AuditReport to a JSON file.
+
+        Args:
+            report: Completed :class:`~winposture.models.AuditReport`.
+            path:   Destination file path for the JSON file.
+        """
 
         def _default(obj):
             if hasattr(obj, "isoformat"):
@@ -239,6 +243,162 @@ class Reporter:
         log.info("JSON report saved to %s", path)
 
     # ── Internal rendering helpers ────────────────────────────────────────────
+
+    def _build_template_context(self, report: AuditReport) -> dict:
+        """Build the full Jinja2 template variable dict for the HTML report."""
+        from collections import Counter, defaultdict
+
+        letter, label = score_grade(report.score)
+        cat_scores = calculate_category_scores(report.results)
+
+        _sev_ord: dict[Severity, int] = {
+            Severity.CRITICAL: 0, Severity.HIGH: 1,
+            Severity.MEDIUM: 2,   Severity.LOW: 3, Severity.INFO: 4,
+        }
+        _sta_ord: dict[Status, int] = {
+            Status.FAIL: 0, Status.WARN: 1, Status.ERROR: 2,
+            Status.PASS: 3, Status.INFO: 4,
+        }
+
+        def _sort_key(r: CheckResult) -> tuple[int, int]:
+            return (_sta_ord.get(r.status, 5), _sev_ord.get(r.severity, 5))
+
+        # Per-category data (sorted by category name, results by status/severity)
+        by_cat: dict[str, list[CheckResult]] = defaultdict(list)
+        for r in report.results:
+            by_cat[r.category].append(r)
+
+        category_data = []
+        for cat_name in sorted(by_cat):
+            cat_results = sorted(by_cat[cat_name], key=_sort_key)
+            cs = cat_scores.get(cat_name, 100)
+            cl, clbl = score_grade(cs)
+            category_data.append({
+                "name":        cat_name,
+                "score":       cs,
+                "grade":       cl,
+                "grade_label": clbl,
+                "results":     cat_results,
+                "fail_count":  sum(1 for r in cat_results if r.status == Status.FAIL),
+                "warn_count":  sum(1 for r in cat_results if r.status == Status.WARN),
+                "pass_count":  sum(1 for r in cat_results if r.status == Status.PASS),
+            })
+
+        # Top findings: CRITICAL+HIGH FAIL/WARN, up to 5
+        issues = [r for r in report.results if r.status in (Status.FAIL, Status.WARN)]
+        issues.sort(key=lambda r: (_sev_ord.get(r.severity, 5),
+                                   0 if r.status == Status.FAIL else 1))
+        top_findings = [
+            r for r in issues
+            if r.severity in (Severity.CRITICAL, Severity.HIGH)
+        ][:5]
+
+        # All FAIL+WARN for detailed findings section
+        fail_warn_results = sorted(
+            [r for r in report.results if r.status in (Status.FAIL, Status.WARN)],
+            key=_sort_key,
+        )
+
+        # INFO results for appendix
+        info_results = [r for r in report.results if r.status == Status.INFO]
+
+        ts = report.scan_timestamp
+        generated_at = (
+            ts.strftime("%Y-%m-%d %H:%M UTC") if ts.tzinfo
+            else ts.strftime("%Y-%m-%d %H:%M")
+        )
+
+        return {
+            "report":            report,
+            "version":           __version__,
+            "score_grade":       letter,
+            "score_label":       label,
+            "executive_summary": self._build_executive_summary(report),
+            "category_data":     category_data,
+            "top_findings":      top_findings,
+            "fail_warn_results": fail_warn_results,
+            "info_results":      info_results,
+            "generated_at":      generated_at,
+        }
+
+    def _build_executive_summary(self, report: AuditReport) -> str:
+        """Auto-generate a one-paragraph executive summary from report findings."""
+        from collections import Counter
+
+        letter, label = score_grade(report.score)
+        total = len(report.results)
+
+        critical_fails = sum(
+            1 for r in report.results
+            if r.status == Status.FAIL and r.severity == Severity.CRITICAL
+        )
+        high_fails = sum(
+            1 for r in report.results
+            if r.status == Status.FAIL and r.severity == Severity.HIGH
+        )
+
+        # Categories with the most issues (FAIL or WARN)
+        issue_cats = Counter(
+            r.category for r in report.results
+            if r.status in (Status.FAIL, Status.WARN)
+        )
+
+        parts: list[str] = []
+
+        # Opening — always present
+        parts.append(
+            f"The security posture of {report.hostname} has been assessed as "
+            f"{label} with an overall score of {report.score}/100 ({letter}) "
+            f"across {total} security checks."
+        )
+
+        if report.fail_count == 0 and report.warn_count == 0:
+            parts.append(
+                "All checks passed with no failures or warnings detected. "
+                "The system appears to be well-configured according to "
+                "Windows security best practices."
+            )
+            return "  ".join(parts)
+
+        # Severity callout
+        if critical_fails > 0:
+            noun = "finding" if critical_fails == 1 else "findings"
+            verb = "requires" if critical_fails == 1 else "require"
+            parts.append(
+                f"{critical_fails} critical {noun} {verb} immediate remediation."
+            )
+        elif high_fails > 0:
+            noun = "finding" if high_fails == 1 else "findings"
+            parts.append(
+                f"{high_fails} high-severity {noun} should be addressed promptly."
+            )
+
+        # Fail/warn summary
+        detail_parts: list[str] = []
+        if report.fail_count > 0:
+            n = report.fail_count
+            detail_parts.append(f"{n} check{'s' if n != 1 else ''} failed")
+        if report.warn_count > 0:
+            n = report.warn_count
+            detail_parts.append(f"{n} check{'s' if n != 1 else ''} issued warnings")
+        if detail_parts:
+            parts.append(f"Of the checks performed, {' and '.join(detail_parts)}.")
+
+        # Top affected categories
+        if issue_cats:
+            top_cats = [cat for cat, _ in issue_cats.most_common(3)]
+            if len(top_cats) == 1:
+                parts.append(f"The primary area of concern is {top_cats[0]}.")
+            else:
+                joined = ", ".join(top_cats[:-1]) + f" and {top_cats[-1]}"
+                parts.append(f"The primary areas of concern are {joined}.")
+
+        parts.append(
+            "Remediation should be prioritized by severity, "
+            "addressing critical and high severity findings first."
+        )
+
+        return "  ".join(parts)
 
     def _make_console(self):
         from rich.console import Console
