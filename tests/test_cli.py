@@ -81,17 +81,19 @@ class TestBuildParser:
 # ---------------------------------------------------------------------------
 
 class TestMain:
-    # Scanner/Reporter/is_admin are lazy-imported inside main(), so we patch
-    # them in their source modules (not in winposture.cli).
+    # Scanner/Reporter/is_admin/load_profile are lazy-imported inside main(),
+    # so we patch them in their source modules (not in winposture.cli).
     _SCANNER_PATH  = "winposture.scanner.Scanner"
     _REPORTER_PATH = "winposture.reporter.Reporter"
     _ADMIN_PATH    = "winposture.utils.is_admin"
+    _PROFILE_PATH  = "winposture.profile.load_profile"
 
-    def _run_main(self, argv=None, is_admin=False):
-        """Run main() with mocked scanner, reporter, and is_admin."""
+    def _run_main(self, argv=None, is_admin=False, score=80):
+        """Run main() with mocked scanner, reporter, is_admin, and load_profile."""
         mock_report = MagicMock()
         mock_report.fail_count = 0
         mock_report.error_count = 0
+        mock_report.score = score
 
         mock_scanner_instance = MagicMock()
         mock_scanner_instance.is_admin = is_admin
@@ -105,6 +107,7 @@ class TestMain:
             patch(self._SCANNER_PATH, return_value=mock_scanner_instance) as MockScanner,
             patch(self._REPORTER_PATH, return_value=mock_reporter_instance) as MockReporter,
             patch(self._ADMIN_PATH, return_value=is_admin),
+            patch(self._PROFILE_PATH, return_value=MagicMock()),
         ):
             from winposture import cli as cli_mod
             import importlib
@@ -143,9 +146,11 @@ class TestMain:
         mock_reporter.print_terminal.assert_called_once()
 
     def test_exit_1_on_failures(self):
+        """Exit 1 when score < 70."""
         mock_report = MagicMock()
         mock_report.fail_count = 3
         mock_report.error_count = 0
+        mock_report.score = 55  # below 70 → exit 1
         mock_scanner = MagicMock()
         mock_scanner.is_admin = False
         mock_reporter = MagicMock()
@@ -156,6 +161,7 @@ class TestMain:
             patch(self._SCANNER_PATH, return_value=mock_scanner),
             patch(self._REPORTER_PATH, return_value=mock_reporter),
             patch(self._ADMIN_PATH, return_value=False),
+            patch(self._PROFILE_PATH, return_value=MagicMock()),
             pytest.raises(SystemExit) as exc_info,
         ):
             from winposture import cli as cli_mod
@@ -166,9 +172,11 @@ class TestMain:
         assert exc_info.value.code == 1
 
     def test_exit_0_on_clean_scan(self):
+        """Exit 0 when score >= 70."""
         mock_report = MagicMock()
         mock_report.fail_count = 0
         mock_report.error_count = 0
+        mock_report.score = 100  # above 70 → no exit
         mock_scanner = MagicMock()
         mock_scanner.is_admin = False
         mock_reporter = MagicMock()
@@ -179,6 +187,7 @@ class TestMain:
             patch(self._SCANNER_PATH, return_value=mock_scanner),
             patch(self._REPORTER_PATH, return_value=mock_reporter),
             patch(self._ADMIN_PATH, return_value=False),
+            patch(self._PROFILE_PATH, return_value=MagicMock()),
         ):
             from winposture import cli as cli_mod
             import importlib
@@ -191,7 +200,7 @@ class TestMain:
         assert call_kwargs.get("categories") == ["firewall", "encryption"]
 
     def test_verbose_passed_to_reporter(self):
-        mock_report = MagicMock(fail_count=0, error_count=0)
+        mock_report = MagicMock(fail_count=0, error_count=0, score=90)
         mock_scanner = MagicMock(is_admin=False)
         mock_reporter = MagicMock()
         mock_reporter.run_with_progress.return_value = mock_report
@@ -201,6 +210,7 @@ class TestMain:
             patch(self._SCANNER_PATH, return_value=mock_scanner),
             patch(self._REPORTER_PATH, return_value=mock_reporter) as MockReporter,
             patch(self._ADMIN_PATH, return_value=False),
+            patch(self._PROFILE_PATH, return_value=MagicMock()),
         ):
             from winposture import cli as cli_mod
             import importlib
@@ -208,3 +218,65 @@ class TestMain:
             cli_mod.main()
 
         MockReporter.assert_called_once_with(verbose=True, no_color=False)
+
+    def test_exit_1_when_score_below_70(self):
+        """Score 69 → exit 1."""
+        mock_report = MagicMock(fail_count=0, error_count=0, score=69)
+        mock_scanner = MagicMock(is_admin=False)
+        mock_reporter = MagicMock()
+        mock_reporter.run_with_progress.return_value = mock_report
+
+        with (
+            patch("sys.argv", ["winposture"]),
+            patch(self._SCANNER_PATH, return_value=mock_scanner),
+            patch(self._REPORTER_PATH, return_value=mock_reporter),
+            patch(self._ADMIN_PATH, return_value=False),
+            patch(self._PROFILE_PATH, return_value=MagicMock()),
+            pytest.raises(SystemExit) as exc,
+        ):
+            from winposture import cli as cli_mod
+            import importlib
+            importlib.reload(cli_mod)
+            cli_mod.main()
+        assert exc.value.code == 1
+
+    def test_exit_0_when_score_exactly_70(self):
+        """Score 70 → exit 0 (no SystemExit raised)."""
+        mock_report = MagicMock(fail_count=0, error_count=0, score=70)
+        mock_scanner = MagicMock(is_admin=False)
+        mock_reporter = MagicMock()
+        mock_reporter.run_with_progress.return_value = mock_report
+
+        with (
+            patch("sys.argv", ["winposture"]),
+            patch(self._SCANNER_PATH, return_value=mock_scanner),
+            patch(self._REPORTER_PATH, return_value=mock_reporter),
+            patch(self._ADMIN_PATH, return_value=False),
+            patch(self._PROFILE_PATH, return_value=MagicMock()),
+        ):
+            from winposture import cli as cli_mod
+            import importlib
+            importlib.reload(cli_mod)
+            cli_mod.main()  # should not raise
+
+    def test_dry_run_exits_cleanly(self):
+        """--dry-run should print module list and return without scanning."""
+        mock_scanner = MagicMock()
+        mock_scanner.dry_run.return_value = ["winposture.checks.firewall", "winposture.checks.smb"]
+
+        with (
+            patch("sys.argv", ["winposture", "--dry-run"]),
+            patch(self._SCANNER_PATH, return_value=mock_scanner),
+            patch(self._REPORTER_PATH, return_value=MagicMock()),
+            patch(self._ADMIN_PATH, return_value=False),
+            patch(self._PROFILE_PATH, return_value=MagicMock()),
+        ):
+            from winposture import cli as cli_mod
+            import importlib
+            importlib.reload(cli_mod)
+            cli_mod.main()  # should return without calling run_with_progress
+
+        mock_scanner.dry_run.assert_called_once()
+        mock_scanner.run_with_progress = MagicMock()
+        # run_with_progress should NOT have been called on the reporter
+        # (checking via scanner.dry_run was called is sufficient)

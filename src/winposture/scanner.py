@@ -7,17 +7,20 @@ Each module must expose a ``run() -> list[CheckResult]`` function.
 from __future__ import annotations
 
 import importlib
-import inspect
 import logging
 import pkgutil
 import platform
 import socket
 import time
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from winposture import checks as checks_pkg
 from winposture.models import AuditReport, CheckResult, Status, Severity
 from winposture.scoring import calculate_score
+
+if TYPE_CHECKING:
+    from winposture.profile import Profile
 
 log = logging.getLogger(__name__)
 
@@ -32,15 +35,20 @@ class Scanner:
         is_admin:   Whether the current process has administrator privileges.
                     Modules with ``REQUIRES_ADMIN = True`` are skipped when
                     this is ``False``, producing an INFO result instead.
+        profile:    Optional :class:`~winposture.profile.Profile` loaded from
+                    a ``winposture.toml`` file.  Applies disabled checks,
+                    severity overrides, and threshold configuration.
     """
 
     def __init__(
         self,
         categories: list[str] | None = None,
         is_admin: bool = False,
+        profile: "Profile | None" = None,
     ) -> None:
         self.categories = categories
         self.is_admin = is_admin
+        self.profile = profile
 
     # ------------------------------------------------------------------
     # Public API
@@ -49,6 +57,14 @@ class Scanner:
     def discover_modules(self) -> list:
         """Return the list of check modules that would be run (respects category filter)."""
         return self._discover_modules()
+
+    def dry_run(self) -> list[str]:
+        """Return the names of modules that would run without executing them.
+
+        Returns:
+            List of module names (e.g. ``"winposture.checks.firewall"``).
+        """
+        return [m.__name__ for m in self._discover_modules()]
 
     def run(
         self,
@@ -62,7 +78,7 @@ class Scanner:
             on_module_start: Optional callable(module) called before each module runs.
 
         Returns:
-            A fully-populated AuditReport including score.
+            A fully-populated AuditReport including score and CIS references.
         """
         if modules is None:
             modules = self._discover_modules()
@@ -79,6 +95,13 @@ class Scanner:
                     pass
             module_results = self._run_module(module)
             results.extend(module_results)
+
+        # Apply CIS references from the central map
+        self._apply_cis_references(results)
+
+        # Apply profile transforms (disabled checks, severity overrides)
+        if self.profile:
+            results = self._apply_profile(results)
 
         duration = time.monotonic() - start
         score = calculate_score(results)
@@ -112,13 +135,28 @@ class Scanner:
     # ------------------------------------------------------------------
 
     def _discover_modules(self) -> list:
-        """Return a list of check module objects matching the category filter."""
-        discovered = []
-        for module_info in pkgutil.iter_modules(checks_pkg.__path__):
-            if module_info.name.startswith("_"):
-                continue  # skip __init__ etc.
+        """Return a list of check module objects matching the category filter.
 
-            full_name = f"winposture.checks.{module_info.name}"
+        Uses ``pkgutil.iter_modules`` when running from source, and falls back
+        to the explicit ``checks.MODULES`` registry when running inside a
+        PyInstaller ``--onefile`` bundle (where the archive is not traversable).
+        """
+        import sys
+
+        discovered = []
+
+        if getattr(sys, "frozen", False):
+            # PyInstaller bundle: use the explicit module registry
+            check_names: list[str] = list(checks_pkg.MODULES)
+        else:
+            check_names = [
+                m.name for m in pkgutil.iter_modules(checks_pkg.__path__)
+                if not m.name.startswith("_")
+            ]
+
+        for name in check_names:
+
+            full_name = f"winposture.checks.{name}"
             try:
                 module = importlib.import_module(full_name)
             except Exception as exc:
@@ -127,7 +165,7 @@ class Scanner:
 
             # Category filter
             if self.categories is not None:
-                module_category = getattr(module, "CATEGORY", module_info.name).lower()
+                module_category = getattr(module, "CATEGORY", name).lower()
                 if module_category not in self.categories:
                     log.debug("Skipping %s (category %r not in filter)", full_name, module_category)
                     continue
@@ -162,11 +200,20 @@ class Scanner:
                 status=Status.INFO,
                 severity=Severity.INFO,
                 description="This check module requires administrator privileges.",
-                details=(
-                    "Run WinPosture as Administrator to include these checks."
-                ),
+                details="Run WinPosture as Administrator to include these checks.",
                 remediation="",
             )]
+
+        # Pass profile thresholds to modules that declare configure()
+        if (
+            self.profile
+            and self.profile.thresholds
+            and callable(getattr(module, "configure", None))
+        ):
+            try:
+                module.configure(self.profile.thresholds)
+            except Exception as exc:
+                log.warning("configure() on %s failed: %s", module.__name__, exc)
 
         log.debug("Running %s", module.__name__)
         t_start = time.monotonic()
@@ -193,3 +240,36 @@ class Scanner:
             r.check_duration = duration
         log.debug("%s finished in %.2fs", module.__name__, duration)
         return results
+
+    @staticmethod
+    def _apply_cis_references(results: list[CheckResult]) -> None:
+        """Populate the cis_reference field on results that don't already have one."""
+        from winposture import cis_map
+        for r in results:
+            if not r.cis_reference:
+                r.cis_reference = cis_map.lookup(r.check_name)
+
+    def _apply_profile(self, results: list[CheckResult]) -> list[CheckResult]:
+        """Apply profile transforms: disabled_checks filter and severity_overrides."""
+        profile = self.profile
+        assert profile is not None
+
+        disabled = set(profile.disabled_checks)
+        filtered = [r for r in results if r.check_name not in disabled]
+
+        if disabled:
+            removed = len(results) - len(filtered)
+            log.info("Profile disabled %d check result(s)", removed)
+
+        for r in filtered:
+            override = profile.severity_overrides.get(r.check_name)
+            if override:
+                try:
+                    r.severity = Severity(override.upper())
+                except ValueError:
+                    log.warning(
+                        "Profile severity_override %r for %r is invalid — ignoring",
+                        override, r.check_name,
+                    )
+
+        return filtered

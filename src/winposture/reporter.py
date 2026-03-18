@@ -253,11 +253,69 @@ class Reporter:
         )
         log.info("JSON report saved to %s", path)
 
+    def print_comparison(self, diff: object) -> None:
+        """Print a scan comparison diff table to the terminal.
+
+        Args:
+            diff: A :class:`~winposture.compare.ScanDiff` from
+                  :func:`~winposture.compare.compare_reports`.
+        """
+        from winposture.compare import ScanDiff
+
+        assert isinstance(diff, ScanDiff)
+        console = self._make_console()
+        sep = _u(console, "─", "-")
+        delta_sign = "+" if diff.score_delta >= 0 else ""
+        delta_col = "green" if diff.score_delta >= 0 else "red"
+
+        console.print()
+        console.print(
+            f"  [bold]Comparison vs baseline[/bold]  "
+            f"Score: [dim]{diff.baseline_score}[/dim] \u2192 "
+            f"[bold]{diff.current_score}[/bold]  "
+            f"([{delta_col}]{delta_sign}{diff.score_delta}[/{delta_col}])"
+        )
+        console.print(f"  {sep * 65}")
+
+        sections: list[tuple[str, str, list]] = [
+            ("green",  "Resolved", diff.resolved_findings),
+            ("red",    "New",      diff.new_findings),
+            ("yellow", "Worsened", diff.worsened_findings),
+            ("yellow", "Ongoing",  diff.unchanged_bad),
+        ]
+
+        any_printed = False
+        for colour, label, findings in sections:
+            if not findings:
+                continue
+            any_printed = True
+            console.print(f"\n  [{colour} bold]{label}[/{colour} bold]  ({len(findings)})")
+            for r in findings:
+                console.print(
+                    f"    [{colour}]{r.status.value:5}[/{colour}]  "
+                    f"[dim]{r.severity.value:8}[/dim]  "
+                    f"{r.category} / {r.check_name}"
+                )
+
+        if not any_printed:
+            console.print(
+                "  [green]No changes detected — scan results match baseline.[/green]"
+            )
+
+        console.print(f"  {sep * 65}")
+        console.print(
+            f"  Resolved: {len(diff.resolved_findings)}  |  "
+            f"New: {len(diff.new_findings)}  |  "
+            f"Worsened: {len(diff.worsened_findings)}  |  "
+            f"Unchanged: {diff.unchanged_count}"
+        )
+        console.print()
+
     # ── Internal rendering helpers ────────────────────────────────────────────
 
     def _build_template_context(self, report: AuditReport) -> dict:
         """Build the full Jinja2 template variable dict for the HTML report."""
-        from collections import Counter, defaultdict
+        from collections import defaultdict
 
         letter, label = score_grade(report.score)
         cat_scores = calculate_category_scores(report.results)

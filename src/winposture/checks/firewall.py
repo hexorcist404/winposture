@@ -37,7 +37,7 @@ def _parse_action(val: object) -> str:
     if isinstance(val, str):
         return val
     try:
-        return _ACTION_INT_MAP.get(int(val), f"Unknown({val})")
+        return _ACTION_INT_MAP.get(int(val), f"Unknown({val})")  # type: ignore[arg-type,call-overload]
     except (TypeError, ValueError):
         return f"Unknown({val})"
 

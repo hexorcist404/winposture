@@ -294,6 +294,9 @@
     .finding-WARN .finding-header { background: #fffbeb; border-bottom-color: #fde68a; }
     .finding-title { font-weight: 600; font-size: .9rem; color: #1e293b; margin-left: .25rem; flex: 1; }
     .finding-cat   { font-size: .75rem; color: #94a3b8; margin-left: auto; }
+    .cis-badge { display: inline-block; font-size: .65rem; font-weight: 700; letter-spacing: .04em;
+                 background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+                 border-radius: 3px; padding: .1rem .35rem; margin-left: .4rem; vertical-align: middle; }
 
     .finding-body { padding: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1.5rem; }
     .finding-field dt { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: .25rem; }
@@ -493,7 +496,7 @@
       <div class="finding-header">
         <span class="badge badge-{{ r.status.value }}">{{ r.status.value }}</span>
         <span class="sev sev-{{ r.severity.value }}">{{ r.severity.value }}</span>
-        <span class="finding-title">{{ r.check_name }}</span>
+        <span class="finding-title">{{ r.check_name }}{% if r.cis_reference %}<span class="cis-badge" title="CIS Benchmark reference">{{ r.cis_reference }}</span>{% endif %}</span>
         <span class="finding-cat">{{ r.category }}</span>
       </div>
       <div class="finding-body">
@@ -552,6 +555,7 @@
           <th style="width:8%">Severity</th>
           <th style="width:16%">Category</th>
           <th>Check Name</th>
+          <th style="width:10%">CIS Ref</th>
         </tr>
       </thead>
       <tbody>
@@ -561,6 +565,7 @@
           <td><span class="sev sev-{{ r.severity.value }}">{{ r.severity.value }}</span></td>
           <td>{{ r.category }}</td>
           <td>{{ r.check_name }}</td>
+          <td>{% if r.cis_reference %}<span class="cis-badge">{{ r.cis_reference }}</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

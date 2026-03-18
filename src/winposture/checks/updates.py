@@ -16,6 +16,19 @@ CATEGORY = "Patching"
 _FAIL_DAYS = 60   # CRITICAL: no updates installed in this many days
 _WARN_DAYS = 30   # HIGH: no updates installed in this many days
 
+
+def configure(thresholds: dict) -> None:
+    """Apply profile threshold overrides for this module.
+
+    Recognised keys: ``max_update_age_warn`` (int days), ``max_update_age_fail`` (int days).
+    Called by the scanner when a profile with thresholds is active.
+    """
+    global _WARN_DAYS, _FAIL_DAYS  # noqa: PLW0603
+    if "max_update_age_warn" in thresholds:
+        _WARN_DAYS = int(thresholds["max_update_age_warn"])
+    if "max_update_age_fail" in thresholds:
+        _FAIL_DAYS = int(thresholds["max_update_age_fail"])
+
 # Get the most recently installed hotfix with a valid date.
 # Some hotfixes have a null InstalledOn; filter those out.
 _PS_LAST_HOTFIX = (
