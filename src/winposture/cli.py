@@ -91,10 +91,10 @@ def main() -> None:
     report = reporter.run_with_progress(scanner)
 
     if args.html:
-        reporter.save_html(report, args.html)
+        reporter.generate_html_report(report, args.html)
 
     if args.json:
-        reporter.save_json(report, args.json)
+        reporter.generate_json_report(report, args.json)
 
     reporter.print_terminal(report, html_path=args.html, json_path=args.json)
 
