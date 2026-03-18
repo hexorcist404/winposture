@@ -18,7 +18,7 @@ If you discover a security vulnerability in WinPosture, **please do not open a p
 
 Instead, please report it using GitHub's private vulnerability reporting feature, OR via email at:
 
-### hexorcist404@pm.me
+### <hexorcist404@pm.me>
 
 Include the following in your report:
 
