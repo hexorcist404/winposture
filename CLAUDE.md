@@ -1,11 +1,13 @@
 # WinPosture — Claude Code Project Context
 
 ## Project Overview
+
 WinPosture is a portable Windows security posture auditor. It runs locally on a
 Windows machine, audits common security configurations, scores the result (0–100),
 and produces a terminal report (Rich) and/or HTML/JSON output.
 
 ## Language & Runtime
+
 - Python 3.12+
 - Type hints on **all** functions and methods (no bare `Any` unless unavoidable)
 - Docstrings on all public functions/classes
@@ -21,7 +23,9 @@ cli.py  →  scanner.py  →  checks/*.py  →  models.CheckResult
 ```
 
 ### Check Modules (`src/winposture/checks/`)
+
 Each file is an independent audit module. Conventions:
+
 - Expose a `run() -> list[CheckResult]` function (the scanner calls this)
 - Never call `sys.exit()` or raise unhandled exceptions — return a result with
   `status=Status.ERROR` and the exception message in `details` instead
@@ -29,12 +33,15 @@ Each file is an independent audit module. Conventions:
 - A single module may return multiple `CheckResult` objects
 
 ### `utils.py`
+
 Shared helpers only. Key functions to build out:
+
 - `run_powershell(script: str) -> str` — runs a PS snippet, returns stdout
 - `read_registry(hive, key, value)` — reads a registry value safely
 - `is_admin() -> bool` — checks for elevated privileges
 
 ### Data Model (`models.py`)
+
 ```python
 @dataclass
 class CheckResult:
@@ -48,6 +55,7 @@ class CheckResult:
 ```
 
 ## Check Categories (files in `checks/`)
+
 | File | Category | Notes |
 |------|----------|-------|
 | `os_info.py` | OS | Version, build, patch level |
@@ -66,6 +74,7 @@ class CheckResult:
 | `misc.py` | Misc | AutoPlay, remote registry, LLMNR |
 
 ## Testing
+
 - Framework: **pytest**
 - Mock all subprocess / WMI / registry calls with `unittest.mock` so tests run on
   any OS (including Linux CI)
@@ -73,16 +82,20 @@ class CheckResult:
 - `tests/conftest.py` holds shared fixtures (sample `CheckResult`, mock PS output…)
 
 ## Target Platforms
+
 - Windows 10 (21H2+) and Windows 11
 - Windows Server 2019 and 2022
 
 ## Output Formats
+
 - **Terminal**: Rich tables with color-coded status/severity
 - **HTML**: Jinja2 template at `templates/report.html.j2`
 - **JSON**: Serialized `AuditReport` dataclass (use `dataclasses.asdict`)
 
 ## Scoring Logic (`scoring.py`)
+
 Start at 100. Deduct points per failed/warned check weighted by severity:
+
 - CRITICAL FAIL: −20
 - HIGH FAIL: −10
 - MEDIUM FAIL: −5
