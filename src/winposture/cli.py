@@ -84,17 +84,19 @@ def main() -> None:
     if args.category:
         categories = [c.strip().lower() for c in args.category.split(",")]
 
-    scanner = Scanner(categories=categories)
+    scanner  = Scanner(categories=categories)
     reporter = Reporter(verbose=args.verbose, no_color=args.no_color)
 
-    report = scanner.run()
-    reporter.print_terminal(report)
+    # Run scan with live progress display, then save outputs, then print results
+    report = reporter.run_with_progress(scanner)
 
     if args.html:
         reporter.save_html(report, args.html)
 
     if args.json:
         reporter.save_json(report, args.json)
+
+    reporter.print_terminal(report, html_path=args.html, json_path=args.json)
 
     # Exit with non-zero code if there are any FAIL results
     if report.fail_count > 0:

@@ -1,7 +1,7 @@
 """Output formatting for WinPosture audit reports.
 
 Supports:
-  - Rich-formatted terminal output
+  - Rich-formatted terminal output with progress, panels, and color
   - HTML report via Jinja2 template
   - JSON export
 """
@@ -11,129 +11,190 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import textwrap
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from winposture.scanner import Scanner
+
+from winposture import __version__
 from winposture.models import AuditReport, CheckResult, Severity, Status
-from winposture.scoring import score_label
+from winposture.scoring import calculate_category_scores, score_grade
 
 log = logging.getLogger(__name__)
 
-# Rich status/severity → color mapping
-_STATUS_COLORS: dict[Status, str] = {
-    Status.PASS: "green",
-    Status.FAIL: "red",
-    Status.WARN: "yellow",
-    Status.INFO: "cyan",
-    Status.ERROR: "magenta",
+# ── Status display config ─────────────────────────────────────────────────────
+
+_STATUS_COLOR: dict[Status, str] = {
+    Status.PASS:  "green",
+    Status.FAIL:  "red",
+    Status.WARN:  "yellow",
+    Status.INFO:  "cyan",
+    Status.ERROR: "dim",
 }
 
-_SEVERITY_COLORS: dict[Severity, str] = {
+_STATUS_ICON: dict[Status, str] = {
+    Status.PASS:  "✓",
+    Status.FAIL:  "✗",
+    Status.WARN:  "!",
+    Status.INFO:  "i",
+    Status.ERROR: "?",
+}
+
+_SEVERITY_COLOR: dict[Severity, str] = {
     Severity.CRITICAL: "bold red",
-    Severity.HIGH: "red",
-    Severity.MEDIUM: "yellow",
-    Severity.LOW: "blue",
-    Severity.INFO: "dim",
+    Severity.HIGH:     "red",
+    Severity.MEDIUM:   "yellow",
+    Severity.LOW:      "blue",
+    Severity.INFO:     "dim",
 }
 
-_SCORE_COLORS = {
-    "Excellent": "bold green",
-    "Good": "green",
-    "Fair": "yellow",
-    "Poor": "red",
-    "Critical": "bold red",
+# Letter grade → Rich color
+_GRADE_COLOR: dict[str, str] = {
+    "A": "bold green",
+    "B": "green",
+    "C": "yellow",
+    "D": "dark_orange",
+    "F": "bold red",
 }
 
+# Severity sort key for top-issues ranking
+_SEV_ORDER: dict[Severity, int] = {
+    Severity.CRITICAL: 0,
+    Severity.HIGH:     1,
+    Severity.MEDIUM:   2,
+    Severity.LOW:      3,
+    Severity.INFO:     4,
+}
+
+_TOP_ISSUES_COUNT  = 5
+_SCORE_BAR_WIDTH   = 34
+_DETAIL_INLINE_MAX = 60
+_REM_WRAP_WIDTH    = 72
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _console_is_unicode(console) -> bool:
+    """Return True if the console encoding can represent Unicode characters."""
+    enc = (getattr(console, "encoding", None) or "utf-8").lower().replace("-", "")
+    return "utf" in enc
+
+
+def _u(console, unicode_char: str, ascii_char: str) -> str:
+    """Return *unicode_char* when the console supports it, else *ascii_char*."""
+    return unicode_char if _console_is_unicode(console) else ascii_char
+
+
+def _score_bar(score: int, filled_char: str = "=", empty_char: str = "-") -> str:
+    """Return a filled/empty progress bar string for *score* (0–100)."""
+    filled = round(score / 100 * _SCORE_BAR_WIDTH)
+    return filled_char * filled + empty_char * (_SCORE_BAR_WIDTH - filled)
+
+
+def _truncate(text: str, maxlen: int) -> str:
+    return text if len(text) <= maxlen else text[:maxlen - 1] + "~"
+
+
+# ── Reporter ──────────────────────────────────────────────────────────────────
 
 class Reporter:
-    """Formats and outputs audit reports.
+    """Formats and outputs WinPosture audit reports.
 
     Args:
-        verbose:   If True, show details/remediation for every check result.
-        no_color:  If True, disable Rich color markup.
+        verbose:  Show details and remediation for every check result.
+        no_color: Disable Rich color markup (produces plain, no-ANSI output).
     """
 
     def __init__(self, verbose: bool = False, no_color: bool = False) -> None:
         self.verbose = verbose
         self.no_color = no_color
 
-    def print_terminal(self, report: AuditReport) -> None:
-        """Print the audit report to the terminal using Rich.
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def run_with_progress(self, scanner: "Scanner") -> AuditReport:
+        """Run *scanner* while showing a Rich progress bar.
+
+        Prints the WinPosture banner above the progress bar, then runs each
+        check module in turn updating the bar.  The caller should then call
+        :meth:`print_terminal` to display the results.
 
         Args:
-            report: The completed AuditReport to display.
+            scanner: Configured :class:`~winposture.scanner.Scanner` instance.
+
+        Returns:
+            Completed :class:`~winposture.models.AuditReport`.
         """
         try:
-            from rich.console import Console
-            from rich.panel import Panel
-            from rich.table import Table
-            from rich import box
+            from rich.progress import (
+                BarColumn,
+                MofNCompleteColumn,
+                Progress,
+                SpinnerColumn,
+                TextColumn,
+                TimeElapsedColumn,
+            )
+        except ImportError:
+            return scanner.run()
+
+        console = self._make_console()
+        modules = scanner.discover_modules()
+        total   = len(modules)
+
+        console.print()
+        self._print_banner(console)
+        console.print()
+
+        with Progress(
+            SpinnerColumn(style="cyan"),
+            TextColumn("[cyan]{task.description:<24}[/cyan]"),
+            BarColumn(bar_width=28, style="dim blue", complete_style="cyan"),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            task = progress.add_task("Initializing…", total=total)
+
+            def _on_module(module) -> None:
+                cat = getattr(module, "CATEGORY", module.__name__)
+                progress.update(task, description=cat, advance=1)
+
+            report = scanner.run(modules=modules, on_module_start=_on_module)
+            progress.update(task, description="Scan complete")
+
+        console.print()
+        return report
+
+    def print_terminal(
+        self,
+        report: AuditReport,
+        html_path: str | None = None,
+        json_path: str | None = None,
+    ) -> None:
+        """Print the completed audit report to the terminal.
+
+        Args:
+            report:    Completed :class:`~winposture.models.AuditReport`.
+            html_path: If set, shown in footer as the saved HTML path.
+            json_path: If set, shown in footer as the saved JSON path.
+        """
+        try:
+            from rich.console import Console  # noqa: F401 – ensure Rich is present
         except ImportError:
             log.warning("Rich not installed — falling back to plain text output")
             self._print_plain(report)
             return
 
-        console = Console(no_color=self.no_color)
-
-        # Banner
-        label = score_label(report.score)
-        score_color = _SCORE_COLORS.get(label, "white")
-        console.print(
-            Panel.fit(
-                f"[bold]WinPosture Security Audit[/bold]\n"
-                f"Host: [cyan]{report.hostname}[/cyan]  |  "
-                f"OS: [cyan]{report.os_version}[/cyan]\n"
-                f"Score: [{score_color}]{report.score}/100 — {label}[/{score_color}]  |  "
-                f"Duration: {report.scan_duration:.1f}s\n"
-                f"[green]PASS: {report.pass_count}[/green]  "
-                f"[red]FAIL: {report.fail_count}[/red]  "
-                f"[yellow]WARN: {report.warn_count}[/yellow]",
-                title="[bold blue]WinPosture[/bold blue]",
-                border_style="blue",
-            )
-        )
-
-        if not report.results:
-            console.print("[yellow]No check results — no modules were loaded.[/yellow]")
-            return
-
-        # Results table
-        table = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="bold")
-        table.add_column("Category", style="dim", width=14)
-        table.add_column("Check", min_width=30)
-        table.add_column("Status", width=8, justify="center")
-        table.add_column("Severity", width=10, justify="center")
-        if self.verbose:
-            table.add_column("Details")
-            table.add_column("Remediation")
-
-        # Group by category for readability
-        categories = sorted({r.category for r in report.results})
-        for category in categories:
-            for result in report.results:
-                if result.category != category:
-                    continue
-                status_color = _STATUS_COLORS.get(result.status, "white")
-                sev_color = _SEVERITY_COLORS.get(result.severity, "white")
-                row = [
-                    result.category,
-                    result.check_name,
-                    f"[{status_color}]{result.status.value}[/{status_color}]",
-                    f"[{sev_color}]{result.severity.value}[/{sev_color}]",
-                ]
-                if self.verbose:
-                    row.append(result.details or "—")
-                    row.append(result.remediation or "—")
-                table.add_row(*row)
-
-        console.print(table)
+        console = self._make_console()
+        self._print_score_panel(console, report)
+        self._print_category_panels(console, report)
+        self._print_top_issues(console, report)
+        self._print_footer(console, report, html_path, json_path)
 
     def save_html(self, report: AuditReport, path: str) -> None:
-        """Render and save an HTML report.
-
-        Args:
-            report: The AuditReport to render.
-            path:   File path to write the HTML output.
-        """
+        """Render and save an HTML report via the Jinja2 template."""
         try:
             from jinja2 import Environment, FileSystemLoader, select_autoescape
         except ImportError:
@@ -151,44 +212,274 @@ class Reporter:
             log.error("Could not load HTML template: %s", exc)
             return
 
+        letter, label = score_grade(report.score)
         html = template.render(
             report=report,
-            score_label=score_label(report.score),
-            status_colors={s.value: c for s, c in _STATUS_COLORS.items()},
+            score_label=label,
+            score_grade=letter,
+            status_colors={s.value: c for s, c in _STATUS_COLOR.items()},
         )
-        output = Path(path)
-        output.write_text(html, encoding="utf-8")
-        log.info("HTML report saved to %s", output)
-        print(f"HTML report saved: {output}")
+        Path(path).write_text(html, encoding="utf-8")
+        log.info("HTML report saved to %s", path)
 
     def save_json(self, report: AuditReport, path: str) -> None:
-        """Serialize the AuditReport to JSON and write to disk.
-
-        Args:
-            report: The AuditReport to serialize.
-            path:   File path to write the JSON output.
-        """
+        """Serialize the AuditReport to JSON."""
 
         def _default(obj):
-            if hasattr(obj, "isoformat"):  # datetime
+            if hasattr(obj, "isoformat"):
                 return obj.isoformat()
             if isinstance(obj, (Status, Severity)):
                 return obj.value
             raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-        data = dataclasses.asdict(report)
-        output = Path(path)
-        output.write_text(json.dumps(data, indent=2, default=_default), encoding="utf-8")
-        log.info("JSON report saved to %s", output)
-        print(f"JSON report saved: {output}")
+        Path(path).write_text(
+            json.dumps(dataclasses.asdict(report), indent=2, default=_default),
+            encoding="utf-8",
+        )
+        log.info("JSON report saved to %s", path)
+
+    # ── Internal rendering helpers ────────────────────────────────────────────
+
+    def _make_console(self):
+        from rich.console import Console
+        return Console(no_color=self.no_color, highlight=False)
+
+    def _print_banner(self, console) -> None:
+        """Print the WinPosture logo panel."""
+        from rich.align import Align
+        from rich.panel import Panel
+        from rich.text import Text
+
+        diamond = _u(console, "◈", "*")
+        logo = Text(f"{diamond}  W I N P O S T U R E  {diamond}", style="bold blue")
+        sub  = Text(f"Windows Security Posture Auditor  {_u(console, '·', '-')}  v{__version__}", style="dim")
+        # Build two-line content; Text.append returns self so we can chain
+        content = logo.copy()
+        content.append("\n")
+        content.append(sub)
+        console.print(Align.center(Panel(
+            Align.center(content),
+            border_style="blue",
+            padding=(1, 6),
+        )))
+
+    def _print_score_panel(self, console, report: AuditReport) -> None:
+        """Print the prominent security-score panel."""
+        from rich.panel import Panel
+
+        letter, label = score_grade(report.score)
+        gc  = _GRADE_COLOR.get(letter, "white")
+        bar = _score_bar(
+            report.score,
+            filled_char=_u(console, "█", "="),
+            empty_char=_u(console, "░", "-"),
+        )
+
+        ts     = report.scan_timestamp
+        ts_str = ts.strftime("%Y-%m-%d %H:%M UTC") if ts.tzinfo else ts.strftime("%Y-%m-%d %H:%M")
+        total  = len(report.results)
+        errors = sum(1 for r in report.results if r.status == Status.ERROR)
+
+        meta = (
+            f"  [dim]Host:[/dim]  [bold]{report.hostname}[/bold]"
+            f"   [dim]OS:[/dim] {report.os_version}\n"
+            f"  [dim]Scan:[/dim] {ts_str}"
+            f"   [dim]Duration:[/dim] {report.scan_duration:.1f}s"
+            f"   [dim]Total checks:[/dim] {total}"
+        )
+
+        score_line = f"\n  [{gc}]{report.score:>3} / 100    {letter}  {label}[/{gc}]\n"
+        bar_line   = f"  [{gc}]{bar}[/{gc}]\n"
+
+        ck = _u(console, "✓", "+")
+        xk = _u(console, "✗", "x")
+        counts = (
+            f"  [green]{ck}  {report.pass_count:>3} passed[/green]"
+            f"   [red]{xk}  {report.fail_count:>3} failed[/red]"
+            f"   [yellow]!  {report.warn_count:>3} warnings[/yellow]"
+        )
+        if errors:
+            counts += f"   [dim]?  {errors} error(s)[/dim]"
+
+        console.print(Panel(
+            meta + score_line + bar_line + counts,
+            title="[bold]Security Score[/bold]",
+            border_style=gc.replace("bold ", ""),
+            padding=(0, 1),
+        ))
+        console.print()
+
+    def _print_category_panels(self, console, report: AuditReport) -> None:
+        """Print one Rich Panel per check category."""
+        from rich.panel import Panel
+
+        cat_scores = calculate_category_scores(report.results)
+        categories = sorted({r.category for r in report.results})
+
+        for category in categories:
+            results    = [r for r in report.results if r.category == category]
+            cat_score  = cat_scores.get(category, 100)
+            letter, _  = score_grade(cat_score)
+            score_color = _GRADE_COLOR.get(letter, "white")
+
+            _icon: dict[Status, str] = {
+                Status.PASS:  _u(console, "✓", "+"),
+                Status.FAIL:  _u(console, "✗", "x"),
+                Status.WARN:  "!",
+                Status.INFO:  "i",
+                Status.ERROR: "?",
+            }
+            lines: list[str] = []
+            for result in results:
+                sc   = _STATUS_COLOR[result.status]
+                icon = _icon[result.status]
+
+                # Bold red icon for CRITICAL failures
+                if result.status == Status.FAIL and result.severity == Severity.CRITICAL:
+                    icon_markup = f"[bold red]{icon}[/bold red]"
+                else:
+                    icon_markup = f"[{sc}]{icon}[/{sc}]"
+
+                name_markup = f"[{sc}]{result.check_name}[/{sc}]"
+
+                # One-line detail snippet for FAIL/WARN in normal mode
+                inline = ""
+                if not self.verbose and result.details and result.status in (
+                    Status.FAIL, Status.WARN
+                ):
+                    snippet = result.details.split("\n")[0]
+                    for sep in (".", ";", " - ", " -- "):
+                        if sep in snippet:
+                            snippet = snippet.split(sep)[0]
+                            break
+                    inline = f"  [dim]{_truncate(snippet, _DETAIL_INLINE_MAX)}[/dim]"
+
+                lines.append(f"  {icon_markup}  {name_markup}{inline}")
+
+                if self.verbose:
+                    sev_c = _SEVERITY_COLOR.get(result.severity, "white")
+                    lines.append(
+                        f"     [dim]Severity:[/dim]  [{sev_c}]{result.severity.value}[/{sev_c}]"
+                    )
+                    if result.details:
+                        wrapped = textwrap.wrap(result.details, 72)
+                        lines.append(f"     [dim]Details:[/dim]   {wrapped[0]}")
+                        for cont in wrapped[1:]:
+                            lines.append(f"               {cont}")
+                    if result.remediation:
+                        wrapped = textwrap.wrap(result.remediation, 72)
+                        lines.append(
+                            f"     [dim]Fix:[/dim]       [italic]{wrapped[0]}[/italic]"
+                        )
+                        for cont in wrapped[1:]:
+                            lines.append(f"               [italic]{cont}[/italic]")
+                    lines.append("")
+
+            title = (
+                f"[bold]{category}[/bold]"
+                f"   [{score_color}]{cat_score}/100  {letter}[/{score_color}]"
+            )
+            console.print(Panel(
+                "\n".join(lines),
+                title=title,
+                border_style="blue",
+                padding=(0, 1),
+            ))
+            console.print()
+
+    def _print_top_issues(self, console, report: AuditReport) -> None:
+        """Print the top-N highest-severity findings with remediation guidance."""
+        from rich.panel import Panel
+
+        issues = [
+            r for r in report.results
+            if r.status in (Status.FAIL, Status.WARN) and r.remediation
+        ]
+        issues.sort(key=lambda r: (
+            _SEV_ORDER.get(r.severity, 5),
+            0 if r.status == Status.FAIL else 1,
+        ))
+        top = issues[:_TOP_ISSUES_COUNT]
+
+        if not top:
+            return
+
+        lines: list[str] = []
+        for i, result in enumerate(top, 1):
+            sc  = _STATUS_COLOR[result.status]
+            svc = _SEVERITY_COLOR.get(result.severity, "white")
+
+            lines.append(
+                f"  [bold]{i}.[/bold]  "
+                f"[{sc}]{result.status.value}[/{sc}]"
+                f" / [{svc}]{result.severity.value}[/{svc}]"
+                f"   [bold]{result.check_name}[/bold]"
+            )
+            for rline in textwrap.wrap(result.remediation, _REM_WRAP_WIDTH):
+                lines.append(f"       [italic dim]{rline}[/italic dim]")
+
+            if i < len(top):
+                lines.append("")
+
+        flag = _u(console, "⚑  ", "")
+        console.print(Panel(
+            "\n".join(lines),
+            title=f"[bold red]{flag}Top Issues[/bold red]",
+            border_style="red",
+            padding=(1, 1),
+        ))
+        console.print()
+
+    def _print_footer(
+        self,
+        console,
+        report: AuditReport,
+        html_path: str | None,
+        json_path: str | None,
+    ) -> None:
+        """Print the scan summary footer."""
+        if _console_is_unicode(console):
+            from rich.rule import Rule
+            console.print(Rule(style="dim"))
+        else:
+            console.print("[dim]" + "-" * 79 + "[/dim]")
+        console.print(
+            f"  [dim]Scan completed in[/dim] [bold]{report.scan_duration:.1f}s[/bold]"
+        )
+        if html_path:
+            console.print(
+                f"  [dim]HTML report saved to:[/dim] [bold cyan]{html_path}[/bold cyan]"
+            )
+        if json_path:
+            console.print(
+                f"  [dim]JSON report saved to:[/dim] [bold cyan]{json_path}[/bold cyan]"
+            )
+        if not self.verbose:
+            console.print(
+                "  [dim]Tip:[/dim] Run with [bold]--verbose[/bold] "
+                "for full details and remediation steps"
+            )
+        console.print()
+
+    # ── Plain-text fallback ───────────────────────────────────────────────────
 
     def _print_plain(self, report: AuditReport) -> None:
-        """Minimal plain-text fallback when Rich is unavailable."""
-        print(f"WinPosture  |  {report.hostname}  |  Score: {report.score}/100")
-        print(f"PASS: {report.pass_count}  FAIL: {report.fail_count}  WARN: {report.warn_count}")
+        """Minimal plain-text output when Rich is unavailable."""
+        letter, label = score_grade(report.score)
+        print(
+            f"WinPosture v{__version__}  |  {report.hostname}"
+            f"  |  Score: {report.score}/100 ({letter} {label})"
+        )
+        print(
+            f"PASS: {report.pass_count}"
+            f"  FAIL: {report.fail_count}"
+            f"  WARN: {report.warn_count}"
+        )
+        print()
         for r in report.results:
-            print(f"[{r.status.value:4}] [{r.severity.value:8}] {r.category}: {r.check_name}")
+            icon = _STATUS_ICON.get(r.status, "?")
+            print(f"[{icon}] [{r.severity.value:8}] {r.category}: {r.check_name}")
             if self.verbose and r.details:
-                print(f"       Details: {r.details}")
+                print(f"       {r.details}")
             if self.verbose and r.remediation:
-                print(f"       Fix:     {r.remediation}")
+                print(f"       Fix: {r.remediation}")

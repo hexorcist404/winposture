@@ -38,19 +38,37 @@ class Scanner:
     # Public API
     # ------------------------------------------------------------------
 
-    def run(self) -> AuditReport:
+    def discover_modules(self) -> list:
+        """Return the list of check modules that would be run (respects category filter)."""
+        return self._discover_modules()
+
+    def run(
+        self,
+        modules: list | None = None,
+        on_module_start=None,
+    ) -> AuditReport:
         """Discover check modules, run them, and return an AuditReport.
+
+        Args:
+            modules:         Pre-discovered module list; if None, auto-discovered.
+            on_module_start: Optional callable(module) called before each module runs.
 
         Returns:
             A fully-populated AuditReport including score.
         """
-        modules = self._discover_modules()
+        if modules is None:
+            modules = self._discover_modules()
         log.info("Discovered %d check module(s): %s", len(modules), [m.__name__ for m in modules])
 
         start = time.monotonic()
         results: list[CheckResult] = []
 
         for module in modules:
+            if on_module_start is not None:
+                try:
+                    on_module_start(module)
+                except Exception:
+                    pass
             module_results = self._run_module(module)
             results.extend(module_results)
 
