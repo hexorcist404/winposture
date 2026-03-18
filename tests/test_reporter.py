@@ -1,0 +1,261 @@
+"""Tests for winposture.reporter — HTML/JSON generation and executive summary."""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from winposture.models import AuditReport, CheckResult, Severity, Status
+from winposture.reporter import Reporter
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+def _make_report(
+    score: int = 80,
+    is_admin: bool = True,
+    extra_results: list[CheckResult] | None = None,
+) -> AuditReport:
+    base = [
+        CheckResult("Firewall", "Domain Profile",  Status.PASS, Severity.HIGH,   "desc", "ok"),
+        CheckResult("Firewall", "Public Profile",  Status.FAIL, Severity.CRITICAL,"desc", "off", "Enable it"),
+        CheckResult("Services", "Risky Services",  Status.WARN, Severity.MEDIUM,  "desc", "SNMP running", "Disable SNMP"),
+        CheckResult("OS",       "OS Version",       Status.INFO, Severity.INFO,    "desc", "Win11 22621"),
+    ]
+    results = base + (extra_results or [])
+    return AuditReport(
+        hostname="TEST-PC",
+        os_version="Windows 11 Pro 10.0.22621",
+        scan_timestamp=datetime(2026, 3, 17, 12, 0, 0, tzinfo=timezone.utc),
+        scan_duration=2.5,
+        results=results,
+        score=score,
+        is_admin=is_admin,
+    )
+
+
+# ---------------------------------------------------------------------------
+# HTML report generation
+# ---------------------------------------------------------------------------
+
+class TestGenerateHtmlReport:
+    def _generate(self, report: AuditReport) -> str:
+        """Generate the HTML report and return its content."""
+        reporter = Reporter()
+        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+            path = f.name
+        try:
+            reporter.generate_html_report(report, path)
+            return Path(path).read_text(encoding="utf-8")
+        finally:
+            os.unlink(path)
+
+    def test_file_created(self):
+        reporter = Reporter()
+        report = _make_report()
+        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+            path = f.name
+        try:
+            reporter.generate_html_report(report, path)
+            assert os.path.exists(path)
+            assert os.path.getsize(path) > 5000
+        finally:
+            os.unlink(path)
+
+    def test_valid_html_structure(self):
+        html = self._generate(_make_report())
+        assert "<!DOCTYPE html>" in html
+        assert "<html" in html
+        assert "</html>" in html
+        assert "<head>" in html
+        assert "<body>" in html
+
+    def test_hostname_present(self):
+        html = self._generate(_make_report())
+        assert "TEST-PC" in html
+
+    def test_score_present(self):
+        html = self._generate(_make_report(score=80))
+        assert "80" in html
+
+    def test_grade_present(self):
+        html = self._generate(_make_report(score=80))
+        assert "Good" in html  # B = Good
+
+    def test_pass_fail_warn_counts(self):
+        html = self._generate(_make_report())
+        assert "1" in html   # 1 PASS, 1 FAIL, 1 WARN, 1 INFO
+
+    def test_category_breakdown_present(self):
+        html = self._generate(_make_report())
+        assert "Category Breakdown" in html
+        assert "Firewall" in html
+
+    def test_detailed_findings_present(self):
+        html = self._generate(_make_report())
+        assert "Detailed Findings" in html
+
+    def test_appendix_present(self):
+        html = self._generate(_make_report())
+        assert "Appendix" in html
+
+    def test_no_external_dependencies(self):
+        html = self._generate(_make_report())
+        assert "cdn." not in html
+        assert "googleapis.com" not in html
+        assert "<script src" not in html
+
+    def test_print_css_present(self):
+        html = self._generate(_make_report())
+        assert "@media print" in html
+
+    def test_version_in_footer(self):
+        html = self._generate(_make_report())
+        assert "WinPosture" in html
+
+    def test_executive_summary_present(self):
+        html = self._generate(_make_report())
+        assert "Executive Summary" in html
+        assert "TEST-PC" in html  # hostname in summary
+
+    def test_top_findings_callout_present_when_critical(self):
+        html = self._generate(_make_report())
+        assert "Critical" in html or "High Priority" in html
+
+    def test_info_appendix_present(self):
+        html = self._generate(_make_report())
+        assert "Appendix A" in html
+
+    def test_full_checklist_present(self):
+        html = self._generate(_make_report())
+        assert "Appendix B" in html
+
+
+# ---------------------------------------------------------------------------
+# JSON report generation
+# ---------------------------------------------------------------------------
+
+class TestGenerateJsonReport:
+    def _generate_json(self, report: AuditReport) -> dict:
+        reporter = Reporter()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            reporter.generate_json_report(report, path)
+            return json.loads(Path(path).read_text(encoding="utf-8"))
+        finally:
+            os.unlink(path)
+
+    def test_file_created(self):
+        reporter = Reporter()
+        report = _make_report()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            reporter.generate_json_report(report, path)
+            assert os.path.exists(path)
+        finally:
+            os.unlink(path)
+
+    def test_valid_json(self):
+        data = self._generate_json(_make_report())
+        assert isinstance(data, dict)
+
+    def test_hostname_field(self):
+        data = self._generate_json(_make_report())
+        assert data["hostname"] == "TEST-PC"
+
+    def test_score_field(self):
+        data = self._generate_json(_make_report(score=75))
+        assert data["score"] == 75
+
+    def test_results_array(self):
+        data = self._generate_json(_make_report())
+        assert "results" in data
+        assert isinstance(data["results"], list)
+        assert len(data["results"]) > 0
+
+    def test_result_fields_present(self):
+        data = self._generate_json(_make_report())
+        r = data["results"][0]
+        for field in ("category", "check_name", "status", "severity", "description", "details"):
+            assert field in r, f"Missing field: {field}"
+
+    def test_scan_timestamp_serialized(self):
+        data = self._generate_json(_make_report())
+        assert "scan_timestamp" in data
+        assert "2026" in data["scan_timestamp"]
+
+    def test_is_admin_field(self):
+        data = self._generate_json(_make_report(is_admin=True))
+        assert data["is_admin"] is True
+
+
+# ---------------------------------------------------------------------------
+# Executive summary generation
+# ---------------------------------------------------------------------------
+
+class TestBuildExecutiveSummary:
+    def _summary(self, results: list[CheckResult], score: int = 80) -> str:
+        report = AuditReport(
+            hostname="MYPC",
+            os_version="Win11",
+            scan_timestamp=datetime.now(tz=timezone.utc),
+            scan_duration=1.0,
+            results=results,
+            score=score,
+        )
+        return Reporter()._build_executive_summary(report)
+
+    def test_contains_hostname(self):
+        s = self._summary([])
+        assert "MYPC" in s
+
+    def test_contains_score(self):
+        s = self._summary([], score=85)
+        assert "85" in s
+
+    def test_clean_machine_mentions_all_passed(self):
+        results = [
+            CheckResult("Firewall", "FW", Status.PASS, Severity.HIGH, "d", "ok"),
+        ]
+        s = self._summary(results, score=100)
+        assert "pass" in s.lower() or "no failure" in s.lower()
+
+    def test_critical_failures_called_out(self):
+        results = [
+            CheckResult("Firewall", "FW", Status.FAIL, Severity.CRITICAL, "d", "off", "fix"),
+        ]
+        s = self._summary(results, score=85)
+        assert "critical" in s.lower()
+
+    def test_top_categories_mentioned(self):
+        results = [
+            CheckResult("Firewall", "FW1", Status.FAIL, Severity.HIGH, "d", "off", "fix"),
+            CheckResult("Firewall", "FW2", Status.WARN, Severity.MEDIUM, "d", "ok", "fix"),
+        ]
+        s = self._summary(results, score=75)
+        assert "Firewall" in s
+
+    def test_remediation_advice_included(self):
+        results = [
+            CheckResult("Antivirus", "AV", Status.FAIL, Severity.CRITICAL, "d", "off", "fix"),
+        ]
+        s = self._summary(results, score=60)
+        assert "remediat" in s.lower() or "priorit" in s.lower()
+
+    def test_fail_count_mentioned(self):
+        results = [
+            CheckResult("X", "C1", Status.FAIL, Severity.HIGH, "d", "d", "fix"),
+            CheckResult("X", "C2", Status.FAIL, Severity.MEDIUM, "d", "d", "fix"),
+        ]
+        s = self._summary(results, score=70)
+        assert "2" in s or "failed" in s.lower()

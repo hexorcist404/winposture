@@ -11,6 +11,7 @@ from winposture.utils import run_powershell_json
 log = logging.getLogger(__name__)
 
 CATEGORY = "File Sharing"
+REQUIRES_ADMIN = True  # Get-SmbServerConfiguration requires administrator privileges
 
 _PS_SMB = (
     "try { "
