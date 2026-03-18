@@ -26,6 +26,10 @@ coverage.xml
 *.tar.gz
 MANIFEST
 
+# PyInstaller
+*.spec
+dist/
+
 # Windows
 Thumbs.db
 ehthumbs.db
