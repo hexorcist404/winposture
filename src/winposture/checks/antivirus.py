@@ -19,10 +19,10 @@ _PS_DEFENDER = (
     "try { "
     "Get-MpComputerStatus | Select-Object "
     "AMServiceEnabled, RealTimeProtectionEnabled, AntivirusEnabled, "
-    "TamperProtectionEnabled, AntivirusSignatureAge "
+    "IsTamperProtected, AntivirusSignatureAge "
     "| ConvertTo-Json -Compress "
     "} catch { '{\"AMServiceEnabled\":false,\"RealTimeProtectionEnabled\":false,"
-    "\"AntivirusEnabled\":false,\"TamperProtectionEnabled\":false,\"AntivirusSignatureAge\":999}' }"
+    "\"AntivirusEnabled\":false,\"IsTamperProtected\":false,\"AntivirusSignatureAge\":999}' }"
 )
 
 # SecurityCenter2 lists all registered AV products (requires desktop SKU).
@@ -60,7 +60,7 @@ def _check_defender() -> list[CheckResult]:
     am_enabled = bool(data.get("AMServiceEnabled", False))
     rtp_enabled = bool(data.get("RealTimeProtectionEnabled", False))
     av_enabled = bool(data.get("AntivirusEnabled", False))
-    tamper = bool(data.get("TamperProtectionEnabled", False))
+    tamper = bool(data.get("IsTamperProtected", False))
     sig_age = int(data.get("AntivirusSignatureAge") or 0)
 
     results: list[CheckResult] = []
@@ -114,7 +114,7 @@ def _check_defender() -> list[CheckResult]:
             "Checks whether Tamper Protection is enabled to prevent "
             "unauthorised changes to Defender settings."
         ),
-        details=f"TamperProtectionEnabled: {tamper}",
+        details=f"IsTamperProtected: {tamper}",
         remediation=(
             "" if tamper else
             "Enable Tamper Protection: "

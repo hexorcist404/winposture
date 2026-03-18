@@ -20,7 +20,7 @@ def _defender(am=True, rtp=True, av=True, tamper=True, sig_age=1) -> dict:
         "AMServiceEnabled": am,
         "RealTimeProtectionEnabled": rtp,
         "AntivirusEnabled": av,
-        "TamperProtectionEnabled": tamper,
+        "IsTamperProtected": tamper,
         "AntivirusSignatureAge": sig_age,
     }
 
