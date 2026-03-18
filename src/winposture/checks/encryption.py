@@ -11,6 +11,7 @@ from winposture.utils import run_powershell_json
 log = logging.getLogger(__name__)
 
 CATEGORY = "Encryption"
+REQUIRES_ADMIN = True  # Get-BitLockerVolume requires administrator privileges
 
 # Get-BitLockerVolume requires admin; the outer try/catch returns an empty JSON
 # array so run() can produce a graceful WARN instead of crashing.

@@ -79,12 +79,14 @@ def main() -> None:
     # Import here so startup is fast for --version / --help
     from winposture.scanner import Scanner
     from winposture.reporter import Reporter
+    from winposture.utils import is_admin
 
     categories: list[str] | None = None
     if args.category:
         categories = [c.strip().lower() for c in args.category.split(",")]
 
-    scanner  = Scanner(categories=categories)
+    admin    = is_admin()
+    scanner  = Scanner(categories=categories, is_admin=admin)
     reporter = Reporter(verbose=args.verbose, no_color=args.no_color)
 
     # Run scan with live progress display, then save outputs, then print results

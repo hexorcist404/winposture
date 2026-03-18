@@ -134,6 +134,7 @@ class Reporter:
                 SpinnerColumn,
                 TextColumn,
                 TimeElapsedColumn,
+                TimeRemainingColumn,
             )
         except ImportError:
             return scanner.run()
@@ -144,6 +145,8 @@ class Reporter:
 
         console.print()
         self._print_banner(console)
+        if not scanner.is_admin:
+            self._print_non_admin_warning(console)
         console.print()
 
         with Progress(
@@ -152,6 +155,7 @@ class Reporter:
             BarColumn(bar_width=28, style="dim blue", complete_style="cyan"),
             MofNCompleteColumn(),
             TimeElapsedColumn(),
+            TimeRemainingColumn(),
             console=console,
             transient=False,
         ) as progress:
@@ -404,6 +408,18 @@ class Reporter:
         from rich.console import Console
         return Console(no_color=self.no_color, highlight=False)
 
+    def _print_non_admin_warning(self, console) -> None:
+        """Print a warning panel when the scan is running without elevation."""
+        from rich.panel import Panel
+        warn = _u(console, "⚠  ", "! ")
+        console.print(Panel(
+            f"  {warn}[yellow bold]Running without administrator privileges.[/yellow bold]\n"
+            "  Some checks (BitLocker, SMB configuration) will be skipped.\n"
+            "  For a complete audit, right-click and [bold]Run as Administrator[/bold].",
+            border_style="yellow",
+            padding=(0, 1),
+        ))
+
     def _print_banner(self, console) -> None:
         """Print the WinPosture logo panel."""
         from rich.align import Align
@@ -613,6 +629,18 @@ class Reporter:
         if json_path:
             console.print(
                 f"  [dim]JSON report saved to:[/dim] [bold cyan]{json_path}[/bold cyan]"
+            )
+        error_count = report.error_count
+        if error_count:
+            console.print(
+                f"  [yellow]![/yellow]  [yellow bold]{error_count} check(s) could not "
+                f"complete.[/yellow bold]  "
+                "[dim]Run as Administrator for full results.[/dim]"
+            )
+        if not report.is_admin:
+            console.print(
+                "  [dim]Note:[/dim] Some checks were skipped — "
+                "[bold]run as Administrator[/bold] for complete results."
             )
         if not self.verbose:
             console.print(

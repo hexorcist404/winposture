@@ -48,6 +48,7 @@ class CheckResult:
     description: str
     details: str
     remediation: str = ""
+    check_duration: float = 0.0  # seconds the parent module took to run
 
 
 @dataclass
@@ -69,6 +70,7 @@ class AuditReport:
     scan_duration: float
     results: list[CheckResult] = field(default_factory=list)
     score: int = 0
+    is_admin: bool = False
 
     # ------------------------------------------------------------------
     # Convenience helpers
@@ -96,3 +98,8 @@ class AuditReport:
     def pass_count(self) -> int:
         """Number of PASS results."""
         return len(self.by_status(Status.PASS))
+
+    @property
+    def error_count(self) -> int:
+        """Number of ERROR results."""
+        return len(self.by_status(Status.ERROR))

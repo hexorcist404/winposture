@@ -174,7 +174,9 @@ def _check_wu_service() -> list[CheckResult]:
 def _check_pending_updates() -> list[CheckResult]:
     """Count Windows Updates that are available but not yet installed."""
     try:
-        output = run_powershell(_PS_PENDING).strip()
+        # COM object query can be slow on machines with many updates pending;
+        # use a 60s timeout to avoid stalling the entire scan.
+        output = run_powershell(_PS_PENDING, timeout=60).strip()
     except WinPostureError as exc:
         return [_error("Pending Windows Updates", str(exc))]
 
