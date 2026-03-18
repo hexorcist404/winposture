@@ -1,80 +1,260 @@
 # WinPosture
 
-A portable Windows security posture auditor. Runs locally, requires no installation
-beyond Python, and produces a scored HTML or terminal report of your system's security
-configuration.
+**Portable Windows security posture auditor.** Runs locally, requires no cloud
+connectivity, and produces a scored terminal report and/or self-contained HTML
+report of your system's security configuration.
 
-## Features
+[![Tests](https://github.com/hexorcist404/winposture/actions/workflows/test.yml/badge.svg)](https://github.com/hexorcist404/winposture/actions/workflows/test.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-- Audits Windows Firewall, BitLocker, Windows Defender/AV, Windows Update, RDP, SMB,
-  UAC, PowerShell policy, local accounts, open ports, startup items, and more
-- Overall security score (0–100)
-- Color-coded terminal output via [Rich](https://github.com/Textualize/rich)
-- Optional HTML report (Jinja2 template)
-- Optional JSON export for integration with other tools
-- Runs on Windows 10/11 and Windows Server 2019/2022
+---
 
-## Requirements
+## Why WinPosture?
 
-- Python 3.12+
-- Windows 10/11 or Windows Server 2019/2022
-- Run as **Administrator** for full results (some checks require elevated privileges)
+Most security auditing tools are either cloud-based (sending your data somewhere),
+require expensive licenses, or are complex enterprise platforms. WinPosture is a
+single executable you can drop on a USB drive and run on any Windows machine in
+seconds — no installation, no internet, no surprises. It gives you an actionable
+security score with plain-English remediation advice.
 
-## Installation
+---
+
+## Quick Start — Standalone Executable
+
+No Python required.
+
+1. Download `winposture.exe` from the [Releases](https://github.com/hexorcist404/winposture/releases) page
+2. Open a terminal (Command Prompt or PowerShell) **as Administrator** for full results
+3. Run:
+
+```
+winposture.exe
+```
+
+For a full HTML report:
+
+```
+winposture.exe --html report.html
+```
+
+Then open `report.html` in your browser.
+
+---
+
+## Terminal Output
+
+```
+ ╔══════════════════════════════════════════════════════════════════╗
+ ║  WinPosture  •  Security Posture Report  •  DESKTOP-ABC123       ║
+ ╚══════════════════════════════════════════════════════════════════╝
+
+ Scanning 14 check modules…
+
+  [████████████████████████████████] 14/14  2.4s
+
+ Score  ┌──────────────────────────────────────────────────────┐
+  72/100 │  ████████████████████████████████░░░░░░░░░░░░░░░░░░  │
+        └──────────────────────────────────────────────────────┘
+        Grade C  —  Fair
+
+ ┌─ Results ───────────────────────────────────────────────────────┐
+ │  PASS   23   FAIL   5   WARN   4   INFO   8   ERROR   0         │
+ └─────────────────────────────────────────────────────────────────┘
+
+ ⚑  Top issues
+    CRITICAL  Encryption   BitLocker not enabled on C:
+    CRITICAL  Patching     Last update 74 days ago (2025-12-24)
+    HIGH      SMB          SMBv1 protocol is enabled
+    HIGH      RDP          RDP enabled without NLA enforcement
+    MEDIUM    Services     SNMP service is running
+```
+
+---
+
+## Installation via pip
+
+Requires Python 3.12+ and Windows 10/11 or Server 2019/2022.
 
 ```bash
-# Clone the repo
-git clone https://github.com/yourname/winposture.git
-cd winposture
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install in editable mode (optional, enables the `winposture` CLI command)
-pip install -e .
+pip install winposture
 ```
+
+Then run:
+
+```bash
+winposture
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/hexorcist404/winposture.git
+cd winposture
+pip install -e .
+winposture
+```
+
+---
 
 ## Usage
 
+```
+winposture [OPTIONS]
+
+Options:
+  --html PATH          Save a self-contained HTML report to PATH
+  --json PATH          Save a JSON report to PATH
+  --category CATS      Comma-separated list of categories to audit
+                       (e.g. firewall,encryption,patching)
+  --verbose            Show detail for every check, including PASSes
+  --no-color           Disable Rich color output (for CI / log files)
+  --log-level LEVEL    Logging verbosity: DEBUG, INFO, WARNING (default),
+                       ERROR, CRITICAL
+  --version            Show version and exit
+  -h, --help           Show this help message and exit
+```
+
+### Examples
+
 ```bash
-# Full audit, terminal output only
-python -m winposture
+# Full audit, terminal only
+winposture
 
 # Save HTML report
-python -m winposture --html report.html
+winposture --html report.html
 
-# Save JSON output
-python -m winposture --json report.json
+# Save JSON for automation / SIEM integration
+winposture --json report.json
 
-# Run only specific categories
-python -m winposture --category firewall,encryption
+# Audit only firewall and patching
+winposture --category firewall,patching
 
-# Verbose output (show details for every check)
-python -m winposture --verbose
+# Show pass/fail details for every check
+winposture --verbose
 
-# Disable color (for CI / log files)
-python -m winposture --no-color
-
-# Show version
-python -m winposture --version
+# Silent mode for scripts (exits 0 if clean, 1 if failures)
+winposture --no-color --log-level ERROR
+echo Exit code: %ERRORLEVEL%
 ```
 
-## Project Structure
+---
 
+## Scoring System
+
+WinPosture calculates a **0–100 security score** by starting at 100 and
+deducting points for failed and warned checks, weighted by severity:
+
+| Outcome | Severity | Deduction |
+|---------|----------|-----------|
+| FAIL    | CRITICAL | -20       |
+| FAIL    | HIGH     | -10       |
+| FAIL    | MEDIUM   | -5        |
+| FAIL    | LOW      | -2        |
+| WARN    | any      | -2        |
+
+The score is clamped to [0, 100].
+
+**Grade scale:**
+
+| Score  | Grade | Label     |
+|--------|-------|-----------|
+| 90-100 | A     | Excellent |
+| 80-89  | B     | Good      |
+| 70-79  | C     | Fair      |
+| 60-69  | D     | Poor      |
+| 0-59   | F     | Critical  |
+
+INFO and ERROR results do not affect the score.
+
+---
+
+## Checks Performed
+
+| Category   | Check                     | Description                                            |
+|------------|---------------------------|--------------------------------------------------------|
+| Firewall   | Domain Profile            | Windows Firewall enabled for domain networks           |
+| Firewall   | Private Profile           | Windows Firewall enabled for private networks          |
+| Firewall   | Public Profile            | Windows Firewall enabled for public networks           |
+| Antivirus  | Defender / AV Status      | Real-time protection enabled, signatures current       |
+| Patching   | Last Windows Update       | Most recent hotfix installed within 30/60 days         |
+| Patching   | Windows Update Service    | wuauserv service is running                            |
+| Patching   | Pending Updates           | Count of uninstalled available updates                 |
+| Encryption | BitLocker (per drive) *   | BitLocker encryption status for each fixed drive       |
+| Accounts   | Local Admin Count         | Number of local administrator accounts                 |
+| Accounts   | Guest Account             | Guest account is disabled                              |
+| Accounts   | Password Policy           | Minimum password length and complexity                 |
+| Services   | Risky Services            | Telnet, SNMP, FTP, and other unnecessary services      |
+| Network    | Open Ports                | Unexpected listening ports                             |
+| Startup    | Startup Programs          | Unusual entries in startup locations                   |
+| SMB        | SMBv1 Protocol *          | SMBv1 disabled (EternalBlue mitigation)                |
+| SMB        | SMB Signing *             | SMB signing required (relay attack mitigation)         |
+| RDP        | RDP Enabled               | Remote Desktop Protocol state                          |
+| RDP        | NLA Enforcement           | Network Level Authentication required for RDP          |
+| UAC        | UAC Level                 | User Account Control prompt behavior                   |
+| PowerShell | Execution Policy          | Script execution policy (Restricted / AllSigned)       |
+| PowerShell | Script Block Logging      | PowerShell script block logging enabled                |
+| PowerShell | Constrained Language Mode | Constrained Language Mode active                       |
+| OS         | OS Version / Build        | Windows version and patch level                        |
+| Misc       | LLMNR                     | Link-Local Multicast Name Resolution disabled          |
+| Misc       | AutoPlay                  | AutoPlay disabled for removable media                  |
+| Misc       | Remote Registry           | Remote Registry service stopped and disabled           |
+| Misc       | Audit Policy              | Security auditing policies enabled                     |
+
+\* Requires **Administrator** privileges.
+
+---
+
+## Building the Executable
+
+Prerequisites: Python 3.12+, `pip install pyinstaller pillow`
+
+```bash
+python build.py
 ```
-winposture/
-├── src/winposture/
-│   ├── checks/         # One file per audit category
-│   ├── models.py       # CheckResult and AuditReport dataclasses
-│   ├── scanner.py      # Orchestrates all check modules
-│   ├── reporter.py     # Terminal + HTML output
-│   ├── scoring.py      # Risk score calculation
-│   ├── utils.py        # PowerShell / registry helpers
-│   └── cli.py          # argparse entry point
-├── templates/
-│   └── report.html.j2  # HTML report template
-└── tests/              # pytest test suite
+
+The exe will be at `dist/winposture.exe`. To build without the custom icon:
+
+```bash
+python build.py --no-icon
 ```
+
+---
+
+## Contributing
+
+1. Fork the repo and create a branch: `git checkout -b feat/my-change`
+2. Make your changes — each check module is self-contained in `src/winposture/checks/`
+3. Add or update tests in `tests/`
+4. Run `pytest tests/ -q` — all tests must pass
+5. Open a pull request into `main`
+
+### Adding a New Check Module
+
+Create `src/winposture/checks/mycheck.py` with:
+
+```python
+from winposture.models import CheckResult, Severity, Status
+
+CATEGORY = "MyCategory"
+# REQUIRES_ADMIN = True  # uncomment if elevation is needed
+
+def run() -> list[CheckResult]:
+    # ... query the system ...
+    return [CheckResult(
+        category=CATEGORY,
+        check_name="My Check Name",
+        status=Status.PASS,       # PASS | FAIL | WARN | INFO | ERROR
+        severity=Severity.HIGH,   # CRITICAL | HIGH | MEDIUM | LOW | INFO
+        description="What this check verifies.",
+        details="What was found.",
+        remediation="",           # empty string for PASS
+    )]
+```
+
+The scanner auto-discovers all modules in `checks/` — no registration needed.
+
+---
 
 ## License
 

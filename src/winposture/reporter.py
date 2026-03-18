@@ -210,7 +210,14 @@ class Reporter:
             log.error("Jinja2 not installed — cannot generate HTML report")
             return
 
-        template_dir = Path(__file__).parent.parent.parent / "templates"
+        import sys
+        if getattr(sys, "frozen", False):
+            # Running inside a PyInstaller one-file bundle; templates were
+            # added with --add-data "templates;templates" so they extract to
+            # sys._MEIPASS/templates/
+            template_dir = Path(sys._MEIPASS) / "templates"  # type: ignore[attr-defined]
+        else:
+            template_dir = Path(__file__).parent.parent.parent / "templates"
         env = Environment(
             loader=FileSystemLoader(str(template_dir)),
             autoescape=select_autoescape(["html"]),
