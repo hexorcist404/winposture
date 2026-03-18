@@ -122,7 +122,10 @@ def _check_unquoted_paths() -> list[CheckResult]:
     try:
         data = run_powershell_json(_PS_UNQUOTED)
     except WinPostureError as exc:
-        return [_error("Unquoted Service Paths", str(exc))]
+        if "empty output" in str(exc):
+            data = []
+        else:
+            return [_error("Unquoted Service Paths", str(exc))]
 
     items = data if isinstance(data, list) else ([data] if data else [])
 

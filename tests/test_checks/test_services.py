@@ -121,6 +121,13 @@ class TestCheckUnquotedPaths:
             r = services._check_unquoted_paths()[0]
         assert r.status == Status.ERROR
 
+    def test_empty_powershell_output_is_pass(self):
+        """Empty PS output (no matches) should be PASS, not ERROR."""
+        with patch("winposture.checks.services.run_powershell_json",
+                   side_effect=WinPostureError("PowerShell command returned empty output (expected JSON)")):
+            r = services._check_unquoted_paths()[0]
+        assert r.status == Status.PASS
+
 
 # ---------------------------------------------------------------------------
 # run()
