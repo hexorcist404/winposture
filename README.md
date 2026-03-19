@@ -44,31 +44,17 @@ Then open `report.html` in your browser.
 
 ## Terminal Output
 
-```
- ╔══════════════════════════════════════════════════════════════════╗
- ║  WinPosture  •  Security Posture Report  •  DESKTOP-ABC123       ║
- ╚══════════════════════════════════════════════════════════════════╝
+**Standard scan (default view):**
 
- Scanning 14 check modules…
+![WinPosture scan overview](assets/screenshots/scan-overview.png)
 
-  [████████████████████████████████] 14/14  2.4s
+**Verbose mode (`--verbose`) — full details and remediation steps for every check:**
 
- Score  ┌──────────────────────────────────────────────────────┐
-  72/100 │  ████████████████████████████████░░░░░░░░░░░░░░░░░░  │
-        └──────────────────────────────────────────────────────┘
-        Grade C  —  Fair
+![WinPosture verbose output](assets/screenshots/scan-verbose.png)
 
- ┌─ Results ───────────────────────────────────────────────────────┐
- │  PASS   23   FAIL   5   WARN   4   INFO   8   ERROR   0         │
- └─────────────────────────────────────────────────────────────────┘
+**Top issues summary (shown at the end of every scan):**
 
- ⚑  Top issues
-    CRITICAL  Encryption   BitLocker not enabled on C:
-    CRITICAL  Patching     Last update 74 days ago (2025-12-24)
-    HIGH      SMB          SMBv1 protocol is enabled
-    HIGH      RDP          RDP enabled without NLA enforcement
-    MEDIUM    Services     SNMP service is running
-```
+![WinPosture top issues](assets/screenshots/scan-top-issues.png)
 
 ---
 
