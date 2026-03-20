@@ -188,11 +188,14 @@ deducting points for failed and warned checks, weighted by severity:
 
 | Outcome | Severity | Deduction |
 |---------|----------|-----------|
-| FAIL    | CRITICAL | -20       |
+| FAIL    | CRITICAL | -15       |
 | FAIL    | HIGH     | -10       |
 | FAIL    | MEDIUM   | -5        |
 | FAIL    | LOW      | -2        |
-| WARN    | any      | -2        |
+| WARN    | CRITICAL | -7        |
+| WARN    | HIGH     | -5        |
+| WARN    | MEDIUM   | -2        |
+| WARN    | LOW      | -1        |
 
 The score is clamped to [0, 100].
 
@@ -237,10 +240,10 @@ INFO and ERROR results do not affect the score.
 | PowerShell | Script Block Logging      | PowerShell script block logging enabled                |
 | PowerShell | Constrained Language Mode | Constrained Language Mode active                       |
 | OS         | OS Version / Build        | Windows version and patch level                        |
-| Misc       | LLMNR                     | Link-Local Multicast Name Resolution disabled          |
-| Misc       | AutoPlay                  | AutoPlay disabled for removable media                  |
-| Misc       | Remote Registry           | Remote Registry service stopped and disabled           |
-| Misc       | Audit Policy              | Security auditing policies enabled                     |
+| Hardening  | LLMNR                     | Link-Local Multicast Name Resolution disabled          |
+| Hardening  | AutoPlay                  | AutoPlay disabled for removable media                  |
+| Hardening  | Remote Registry           | Remote Registry service stopped and disabled           |
+| Hardening  | Audit Policy              | Security auditing policies enabled                     |
 
 \* Requires **Administrator** privileges.
 
