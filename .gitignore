@@ -50,4 +50,5 @@ $RECYCLE.BIN/
 # WinPosture outputs
 *.html
 *.json
+!docs/index.html
 winposture_report_*

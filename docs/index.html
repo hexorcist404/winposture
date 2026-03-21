@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="WinPosture — portable Windows security posture auditor. Single executable, no cloud, actionable remediation." />
+  <meta name="google-site-verification" content="N68F_sJSRaPAUmW1m4vSVKj0BwJBtOEP6m9mwE1SAwA" />
+  <title>WinPosture — Windows Security Posture Auditor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --accent:    #58a6ff;
+      --accent2:   #3fb950;
+      --warn:      #d29922;
+      --danger:    #f85149;
+      --text:      #c9d1d9;
+      --muted:     #8b949e;
+      --heading:   #e6edf3;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ── */
+    .container { max-width: 860px; margin: 0 auto; padding: 0 1.5rem; }
+
+    /* ── Nav ── */
+    nav {
+      border-bottom: 1px solid var(--border);
+      padding: 0.9rem 0;
+      position: sticky;
+      top: 0;
+      background: rgba(13, 17, 23, 0.92);
+      backdrop-filter: blur(6px);
+      z-index: 100;
+    }
+    nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--heading);
+      letter-spacing: 0.02em;
+    }
+    .nav-brand span { color: var(--accent); }
+    nav ul {
+      list-style: none;
+      display: flex;
+      gap: 1.5rem;
+    }
+    nav ul a {
+      color: var(--muted);
+      font-size: 0.9rem;
+      transition: color 0.15s;
+    }
+    nav ul a:hover { color: var(--heading); text-decoration: none; }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 5rem 0 4rem;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(88, 166, 255, 0.1);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.8rem;
+      border-radius: 2rem;
+      margin-bottom: 1.4rem;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.4rem);
+      font-weight: 800;
+      color: var(--heading);
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 1.1rem;
+    }
+    .hero h1 span { color: var(--accent); }
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 580px;
+      margin: 0 auto 2.2rem;
+    }
+    .btn-group { display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.65rem 1.4rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:hover { opacity: 0.85; transform: translateY(-1px); text-decoration: none; }
+    .btn-primary { background: var(--accent); color: #0d1117; }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Score demo strip ── */
+    .score-strip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem 2rem;
+      margin: 3rem 0;
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+    .score-block { text-align: center; min-width: 80px; }
+    .score-num {
+      font-size: 2.8rem;
+      font-weight: 800;
+      color: var(--accent2);
+      line-height: 1;
+    }
+    .score-label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.2rem; }
+    .score-bar-wrap { flex: 1; min-width: 200px; }
+    .score-bar-label { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.4rem; }
+    .score-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .score-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); border-radius: 4px; width: 76%; }
+    .score-pills { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .pill {
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      border-radius: 1rem;
+    }
+    .pill-pass  { background: rgba(63,185,80,.15);  color: var(--accent2); }
+    .pill-fail  { background: rgba(248,81,73,.15);  color: var(--danger); }
+    .pill-warn  { background: rgba(210,153,34,.15); color: var(--warn); }
+    .pill-info  { background: rgba(88,166,255,.15); color: var(--accent); }
+
+    /* ── Sections ── */
+    section { padding: 3.5rem 0; border-top: 1px solid var(--border); }
+    section h2 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--heading);
+      margin-bottom: 0.4rem;
+    }
+    .section-sub { color: var(--muted); margin-bottom: 2rem; font-size: 0.95rem; }
+
+    /* ── Features grid ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.2rem 1.3rem;
+      transition: border-color 0.15s;
+    }
+    .feature-card:hover { border-color: var(--accent); }
+    .feature-icon { font-size: 1.4rem; margin-bottom: 0.6rem; }
+    .feature-card h3 { font-size: 0.95rem; font-weight: 600; color: var(--heading); margin-bottom: 0.3rem; }
+    .feature-card p  { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+
+    /* ── Getting started ── */
+    .steps { display: flex; flex-direction: column; gap: 1rem; }
+    .step {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background: rgba(88, 166, 255, 0.15);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .step-body h3 { font-size: 0.95rem; font-weight: 600; color: var(--heading); margin-bottom: 0.25rem; }
+    .step-body p  { font-size: 0.88rem; color: var(--muted); }
+    pre, code {
+      font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.9rem 1.1rem;
+      font-size: 0.87rem;
+      color: var(--accent2);
+      overflow-x: auto;
+      margin-top: 0.5rem;
+    }
+
+    /* ── Checks table ── */
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 0.5rem;
+    }
+    .module-tag {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.45rem 0.8rem;
+      font-size: 0.83rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .module-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent2); flex-shrink: 0; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 0;
+      text-align: center;
+      font-size: 0.83rem;
+      color: var(--muted);
+    }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--text); }
+
+    @media (max-width: 600px) {
+      .score-strip { flex-direction: column; align-items: flex-start; gap: 1rem; }
+      nav ul { gap: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navigation ── -->
+<nav>
+  <div class="container">
+    <span class="nav-brand">Win<span>Posture</span></span>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#checks">Checks</a></li>
+      <li><a href="#start">Get Started</a></li>
+      <li><a href="https://github.com/hexorcist404/winposture">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<header class="hero">
+  <div class="container">
+    <div class="hero-badge">Open Source &middot; Windows 10 / 11</div>
+    <h1>Security posture auditing<br/>for <span>Windows</span>, offline.</h1>
+    <p>
+      A single executable that scores your Windows security configuration against
+      CIS Benchmark controls and gives you plain-English remediation steps —
+      no cloud, no agent, no license.
+    </p>
+    <div class="btn-group">
+      <a class="btn btn-primary" href="https://github.com/hexorcist404/winposture/releases/latest">
+        &#8659; Download winposture.exe
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/hexorcist404/winposture">
+        View on GitHub
+      </a>
+    </div>
+
+    <!-- Score demo -->
+    <div class="score-strip">
+      <div class="score-block">
+        <div class="score-num">76</div>
+        <div class="score-label">/ 100 &nbsp; C&nbsp;&middot;&nbsp;Fair</div>
+      </div>
+      <div class="score-bar-wrap">
+        <div class="score-bar-label">
+          <span>Security Score</span>
+          <span>53 checks &middot; 22s</span>
+        </div>
+        <div class="score-bar"><div class="score-bar-fill"></div></div>
+        <div class="score-pills" style="margin-top:0.7rem;">
+          <span class="pill pill-pass">&#10003; 35 passed</span>
+          <span class="pill pill-fail">&#215; 3 failed</span>
+          <span class="pill pill-warn">&#33; 2 warnings</span>
+          <span class="pill pill-info">i 13 info</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ── Features ── -->
+<section id="features">
+  <div class="container">
+    <h2>Features</h2>
+    <p class="section-sub">Everything you need for a fast, credible security assessment.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#127959;</div>
+        <h3>Single Executable</h3>
+        <p>Drop <code>winposture.exe</code> on a USB drive and run it on any Windows machine. No installation, no Python, no dependencies.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128274;</div>
+        <h3>Fully Offline</h3>
+        <p>No data leaves the machine. No telemetry, no cloud APIs, no license servers — your audit data stays yours.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128203;</div>
+        <h3>CIS Benchmark Mapping</h3>
+        <p>Every finding is annotated with the corresponding CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0 control ID.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128200;</div>
+        <h3>Scored &amp; Graded</h3>
+        <p>A 0–100 security score with letter grade gives you an at-a-glance picture of the system's risk posture.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128196;</div>
+        <h3>HTML &amp; JSON Reports</h3>
+        <p>Export a self-contained HTML report for stakeholders or a structured JSON report for pipeline integration.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128260;</div>
+        <h3>Comparative Scanning</h3>
+        <p>Save a baseline and diff against it later to track remediation progress over time with <code>--baseline</code> and <code>--compare</code>.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#9881;</div>
+        <h3>Custom Profiles</h3>
+        <p>A <code>winposture.toml</code> config lets you disable checks, override severities, and tune thresholds for your environment.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#128295;</div>
+        <h3>Actionable Remediation</h3>
+        <p>Every failing check includes a concrete fix command or Group Policy path — not just a problem description.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Check modules ── -->
+<section id="checks">
+  <div class="container">
+    <h2>14 Check Modules</h2>
+    <p class="section-sub">Covers the most impactful Windows security controls out of the box.</p>
+    <div class="modules-grid">
+      <div class="module-tag">Access Control (UAC)</div>
+      <div class="module-tag">Local Accounts</div>
+      <div class="module-tag">Password Policy</div>
+      <div class="module-tag">Windows Defender</div>
+      <div class="module-tag">Tamper Protection</div>
+      <div class="module-tag">BitLocker (per drive)</div>
+      <div class="module-tag">Firewall Profiles</div>
+      <div class="module-tag">SMB v1 / Signing</div>
+      <div class="module-tag">RDP &amp; NLA</div>
+      <div class="module-tag">Windows Updates</div>
+      <div class="module-tag">Startup Programs</div>
+      <div class="module-tag">Risky Services</div>
+      <div class="module-tag">PowerShell Logging</div>
+      <div class="module-tag">Network Hardening</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Getting started ── -->
+<section id="start">
+  <div class="container">
+    <h2>Get Started</h2>
+    <p class="section-sub">Up and running in under a minute.</p>
+    <div class="steps">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>Download the executable</h3>
+          <p>Grab <code>winposture.exe</code> from the <a href="https://github.com/hexorcist404/winposture/releases/latest">latest release</a>. No installer needed.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Open an Administrator terminal</h3>
+          <p>Right-click Command Prompt or PowerShell &rarr; <em>Run as administrator</em>. Some checks (BitLocker, local accounts, services) require elevation for full results.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Run a scan</h3>
+          <pre>winposture.exe</pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Generate an HTML report (optional)</h3>
+          <pre>winposture.exe --html report.html --verbose</pre>
+          <p style="margin-top:0.4rem; font-size:0.85rem; color:var(--muted);">Opens as a standalone file in any browser — no server required.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h3>Track changes over time</h3>
+          <pre>winposture.exe --baseline before.json
+# ... remediate findings ...
+winposture.exe --compare before.json</pre>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="container">
+    <p>
+      WinPosture is open source software released under the
+      <a href="https://github.com/hexorcist404/winposture/blob/main/LICENSE">MIT License</a>.
+      &nbsp;&middot;&nbsp;
+      <a href="https://github.com/hexorcist404/winposture">GitHub</a>
+      &nbsp;&middot;&nbsp;
+      <a href="https://github.com/hexorcist404/winposture/releases">Releases</a>
+      &nbsp;&middot;&nbsp;
+      <a href="https://github.com/hexorcist404/winposture/issues">Issues</a>
+    </p>
+    <p style="margin-top:0.5rem; color:#484f58;">
+      For authorized security assessment use only.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
