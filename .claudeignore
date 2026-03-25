@@ -1,0 +1,11 @@
+dist/
+build/
+*.exe
+*.pkg
+__pycache__/
+*.pyc
+.git/
+.pytest_cache/
+*.egg-info/
+venv/
+.venv/
