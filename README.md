@@ -210,9 +210,10 @@ INFO and ERROR results do not affect the score.
 ## CIS Benchmark Mapping
 
 Where applicable, findings are mapped to CIS Microsoft Windows Benchmark control
-IDs (CIS Microsoft Windows 11 Enterprise Benchmark v3.0.0). These references
-appear as blue badges in the HTML report's detailed findings section, making
-WinPosture useful for compliance documentation and audit preparation.
+IDs. These references appear as blue badges in the HTML report's detailed findings
+section, making WinPosture useful for compliance documentation and audit
+preparation. Mappings are based on the CIS Microsoft Windows 11 Enterprise
+Benchmark and CIS Microsoft Windows 10 Enterprise Benchmark.
 
 ---
 
