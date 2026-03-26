@@ -1,8 +1,10 @@
 """CIS Benchmark reference mapping for WinPosture check results.
 
-Maps check_name values to CIS Microsoft Windows Benchmark control IDs,
-based on the CIS Microsoft Windows 11 Enterprise Benchmark v5.0.0 and
-CIS Microsoft Windows 10 Enterprise Benchmark v4.0.0 (Levels 1 and 2).
+Maps check_name values to CIS Microsoft Windows Benchmark control IDs.
+The base map (_PREFIX_MAP) uses CIS Microsoft Windows 11 Enterprise Benchmark
+v5.0.0 IDs.  When running on Windows 10, pass ``is_win10=True`` to ``lookup``
+and the eight IDs that differ in CIS Microsoft Windows 10 Enterprise Benchmark
+v4.0.0 will be substituted from ``_WIN10_OVERRIDES`` automatically.
 
 References are approximate — always verify against the current official
 benchmark for your specific OS version and edition before use in a formal
@@ -65,6 +67,21 @@ NEEDS MANUAL REVIEW (no direct CIS admin template control in v5.0.0):
 """
 
 from __future__ import annotations
+
+# Win10 v4.0.0 IDs that differ from the Win11 v5.0.0 base map.
+# Section offsets that changed: Defender (42→43), PowerShell (88→87),
+# WinRM (90→89), Windows Update (94→93).  SMB Encryption (18.6.8.7)
+# is Win11-only and has no equivalent in v4.0.0.
+_WIN10_OVERRIDES: dict[str, str] = {
+    "Defender Real-Time Protection":    "CIS 18.10.43.10.3",
+    "Defender Signature Age":           "CIS 18.10.43.14",
+    "PowerShell Script Block Logging":  "CIS 18.10.87.1",
+    "WinRM Status":                     "CIS 18.10.89.2.2",
+    "Last Windows Update":              "CIS 18.10.93.2.1",
+    "Windows Update Service":           "CIS 18.10.93.2.1",
+    "Pending Windows Updates":          "CIS 18.10.93.2.1",
+    "SMB Encryption":                   "",   # not present in Win10 v4.0.0
+}
 
 # Maps check_name prefix → CIS control ID.
 # Prefix matching allows one entry to cover dynamically-named checks
@@ -171,7 +188,7 @@ _PREFIX_MAP: dict[str, str] = {
 }
 
 
-def lookup(check_name: str) -> str:
+def lookup(check_name: str, is_win10: bool = False) -> str:
     """Return the CIS Benchmark control ID for *check_name*, or ``''`` if unknown.
 
     Matching is done by prefix so that dynamically-named checks (e.g.
@@ -179,10 +196,17 @@ def lookup(check_name: str) -> str:
 
     Args:
         check_name: The ``check_name`` field from a ``CheckResult``.
+        is_win10:   Set to ``True`` when auditing a Windows 10 host so that
+                    IDs from ``_WIN10_OVERRIDES`` are substituted where the
+                    v4.0.0 and v5.0.0 benchmarks differ.
 
     Returns:
         CIS control ID string (e.g. ``"CIS 9.1.1"``), or empty string.
     """
+    if is_win10:
+        for prefix, cis_id in _WIN10_OVERRIDES.items():
+            if check_name.startswith(prefix):
+                return cis_id
     for prefix, cis_id in _PREFIX_MAP.items():
         if check_name.startswith(prefix):
             return cis_id
