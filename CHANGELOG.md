@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.1] - 2026-03-27
+
+### Fixed
+- Fixed Defender Tamper Protection check using wrong property (`TamperProtectionEnabled` → `IsTamperProtected`)
+- Fixed Unquoted Service Paths check returning ERROR when no unquoted paths found (now correctly returns PASS)
+- Fixed CIS benchmark version references (updated to current CIS Windows 11 v5.0.0 and Windows 10 v4.0.0)
+- Corrected CIS control ID mappings against latest benchmark PDFs
+- Removed non-existent `pip install winposture` from README (not yet on PyPI)
+
+### Changed
+- Updated README checks table to include all 53 checks (was missing ~20)
+- Added CIS Benchmark Mapping section to README
+- Updated scoring table in README to match actual code deductions
+- Added admin privilege note to "Why WinPosture?" section
+- WARN deductions now broken out by severity level in documentation
+
+---
+
 ## [0.1.0] - 2026-03-17
 
 Initial public release.
