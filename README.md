@@ -213,7 +213,9 @@ Where applicable, findings are mapped to CIS Microsoft Windows Benchmark control
 IDs. These references appear as blue badges in the HTML report's detailed findings
 section, making WinPosture useful for compliance documentation and audit
 preparation. Mappings are based on the CIS Microsoft Windows 11 Enterprise
-Benchmark and CIS Microsoft Windows 10 Enterprise Benchmark.
+Benchmark v5.0.0 and CIS Microsoft Windows 10 Enterprise Benchmark v4.0.0.
+The correct version is selected automatically based on the OS build number at
+scan time.
 
 ---
 
