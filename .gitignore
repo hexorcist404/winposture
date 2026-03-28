@@ -47,6 +47,9 @@ $RECYCLE.BIN/
 *.swp
 *~
 
+# CIS Benchmark PDFs (proprietary — do not commit)
+*.pdf
+
 # WinPosture outputs
 *.html
 *.json
