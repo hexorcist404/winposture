@@ -58,20 +58,20 @@ class CheckResult:
 
 | File | Category | Notes |
 |------|----------|-------|
-| `os_info.py` | OS | Version, build, patch level |
-| `updates.py` | Updates | Windows Update status |
+| `os_info.py` | System | Version, build, patch level |
+| `updates.py` | Patching | Windows Update status |
 | `firewall.py` | Firewall | All three profiles |
 | `antivirus.py` | Antivirus | Defender / third-party AV |
 | `encryption.py` | Encryption | BitLocker per drive |
 | `accounts.py` | Accounts | Local users, admins, guest, password policy |
 | `services.py` | Services | Risky/unnecessary running services |
 | `network.py` | Network | Open ports, listening services |
-| `startup.py` | Startup | Startup programs, scheduled tasks |
-| `smb.py` | SMB | SMBv1 disabled? Signing? |
-| `rdp.py` | RDP | Enabled? NLA enforced? |
-| `uac.py` | UAC | UAC level |
+| `startup.py` | Persistence | Startup programs, scheduled tasks |
+| `smb.py` | File Sharing | SMBv1 disabled? Signing? |
+| `rdp.py` | Remote Access | Enabled? NLA enforced? |
+| `uac.py` | Access Control | UAC level |
 | `powershell.py` | PowerShell | Execution policy, logging, constrained mode |
-| `misc.py` | Misc | AutoPlay, remote registry, LLMNR |
+| `misc.py` | Hardening | AutoPlay, remote registry, LLMNR |
 
 ## Testing
 
@@ -96,8 +96,15 @@ class CheckResult:
 
 Start at 100. Deduct points per failed/warned check weighted by severity:
 
-- CRITICAL FAIL: −20
-- HIGH FAIL: −10
-- MEDIUM FAIL: −5
-- LOW FAIL / any WARN: −2
-- Clamp to [0, 100]
+| Outcome | Severity | Deduction |
+|---------|----------|-----------|
+| FAIL    | CRITICAL | −15       |
+| FAIL    | HIGH     | −10       |
+| FAIL    | MEDIUM   | −5        |
+| FAIL    | LOW      | −2        |
+| WARN    | CRITICAL | −7        |
+| WARN    | HIGH     | −5        |
+| WARN    | MEDIUM   | −2        |
+| WARN    | LOW      | −1        |
+
+Clamp to [0, 100]. INFO and ERROR results do not affect the score.
