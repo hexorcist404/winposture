@@ -8,7 +8,8 @@ WinPosture is a **read-only** security auditing tool. It does not modify system 
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 0.1.1   | :white_check_mark: |
+| 0.1.0   | :x:                |
 
 Only the latest release is actively supported with security updates.
 
