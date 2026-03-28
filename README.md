@@ -217,6 +217,12 @@ Benchmark v5.0.0 and CIS Microsoft Windows 10 Enterprise Benchmark v4.0.0.
 The correct version is selected automatically based on the OS build number at
 scan time.
 
+> **Attribution:** CIS Benchmarks are the registered trademarks of the Center
+> for Internet Security, Inc. WinPosture is an independent tool that references
+> CIS Benchmark recommendations for informational purposes. This project is not
+> affiliated with, endorsed by, or sponsored by CIS. To obtain the official CIS
+> Benchmarks, visit [cisecurity.org](https://www.cisecurity.org).
+
 ---
 
 ## Checks Performed
