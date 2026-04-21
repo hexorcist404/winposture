@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
 
 from winposture.checks import firewall
 from winposture.exceptions import WinPostureError
-from winposture.models import CheckResult, Status, Severity
+from winposture.models import Status, Severity
 
 
 # ---------------------------------------------------------------------------

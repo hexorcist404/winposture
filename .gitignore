@@ -55,3 +55,7 @@ $RECYCLE.BIN/
 *.json
 !docs/index.html
 winposture_report_*
+
+# Design review scaffolding
+gen_sample_report.py
+sample_report.html

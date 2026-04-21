@@ -15,7 +15,6 @@ The exe runs on any Windows 10/11 machine without a Python installation.
 from __future__ import annotations
 
 import argparse
-import shutil
 import subprocess
 import sys
 from pathlib import Path
