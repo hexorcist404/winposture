@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.2] - 2026-04-21
+
+### Security
+- Fixed Jinja2 autoescape silently disabled for HTML reports — `select_autoescape(["html"])` checks the last file extension, so `report.html.j2` resolved to `.j2` and autoescape was `False`. Changed to `autoescape=True`. Regression test added to catch future regressions.
+- Locked GitHub Actions `claude.yml` to `author_association == 'OWNER'` only — previously had no `if:` guard, allowing any GitHub user to invoke Claude with `contents: write` permissions via an issue comment.
+
+### Changed
+- HTML report: score gauge enlarged (130 → 160 px) with larger typography for improved readability
+- HTML report: category sections now collapse by default when all checks pass; only sections with failures, warnings, or errors expand automatically
+- HTML report: ERROR stat box added (purple) — shown when any checks could not complete
+- HTML report: `"Segoe UI"` moved to front of font stack (Windows-native tool, Segoe UI is always available on target systems)
+- HTML report: executive summary now notes how many checks could not complete when `error_count > 0`
+- README: added "How WinPosture queries your system" section explaining `-ExecutionPolicy Bypass` usage
+
+### Fixed
+- HTML report: categories containing only ERROR-status results no longer render collapsed (looked like passing categories)
+
+---
+
 ## [0.1.1] - 2026-03-27
 
 ### Fixed
