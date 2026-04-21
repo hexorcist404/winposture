@@ -10,7 +10,9 @@
 
     /* ── Base ──────────────────────────────────────────────────── */
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      /* Segoe UI leads: this is a Windows tool, viewed by Windows users.
+         Segoe UI is the native Windows UI font — professional, readable at density. */
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto,
                    "Helvetica Neue", Arial, sans-serif;
       background: #f1f5f9;
       color: #1e293b;
@@ -65,8 +67,8 @@
     /* ── Score gauge (CSS conic-gradient) ──────────────────────── */
     .gauge-wrap { text-align: center; flex-shrink: 0; }
     .gauge {
-      width: 130px;
-      height: 130px;
+      width: 160px;
+      height: 160px;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -81,8 +83,8 @@
     .gauge-D { background: conic-gradient(#ea580c {{ report.score }}%, #fff4ec {{ report.score }}%); }
     .gauge-F { background: conic-gradient(#dc2626 {{ report.score }}%, #fff0f0 {{ report.score }}%); }
     .gauge-inner {
-      width: 100px;
-      height: 100px;
+      width: 126px;
+      height: 126px;
       border-radius: 50%;
       background: #fff;
       display: flex;
@@ -91,9 +93,9 @@
       justify-content: center;
       line-height: 1;
     }
-    .gauge-num  { font-size: 1.8rem; font-weight: 800; color: #1e293b; }
-    .gauge-denom { font-size: .7rem; color: #64748b; }
-    .gauge-letter { font-size: 1rem; font-weight: 700; margin-top: .1rem; }
+    .gauge-num  { font-size: 2.2rem; font-weight: 800; color: #1e293b; }
+    .gauge-denom { font-size: .75rem; color: #64748b; }
+    .gauge-letter { font-size: 1.2rem; font-weight: 700; margin-top: .15rem; }
     .gauge-A .gauge-letter { color: #059669; }
     .gauge-B .gauge-letter { color: #16a34a; }
     .gauge-C .gauge-letter { color: #ca8a04; }
@@ -124,6 +126,7 @@
     .stat-pass  .stat-num { color: #059669; }
     .stat-fail  .stat-num { color: #dc2626; }
     .stat-warn  .stat-num { color: #d97706; }
+    .stat-error .stat-num { color: #7c3aed; }
 
     /* ── Section ───────────────────────────────────────────────── */
     section { padding: 1.75rem 2.5rem; border-bottom: 1px solid #e2e8f0; }
@@ -412,6 +415,12 @@
       <div class="stat-num">{{ report.warn_count }}</div>
       <div class="stat-lbl">Warnings</div>
     </div>
+    {% if report.error_count %}
+    <div class="stat-box stat-error">
+      <div class="stat-num">{{ report.error_count }}</div>
+      <div class="stat-lbl">Errors</div>
+    </div>
+    {% endif %}
   </div>
 
   {# ── EXECUTIVE SUMMARY ────────────────────────────────────────── #}
@@ -442,7 +451,7 @@
   <section>
     <h2 class="section-title">Category Breakdown</h2>
     {% for cat in category_data %}
-    <details class="cat-block" open>
+    <details class="cat-block"{% if cat.fail_count or cat.warn_count %} open{% endif %}>
       <summary class="cat-header">
         <span class="cat-name">{{ cat.name }}</span>
         <span class="cat-meta">
