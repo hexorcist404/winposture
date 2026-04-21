@@ -27,8 +27,15 @@ score with plain-English remediation advice.
 No Python required.
 
 1. Download `winposture.exe` from the [Releases](https://github.com/hexorcist404/winposture/releases) page
-2. Open a terminal (Command Prompt or PowerShell) **as Administrator** for full results
-3. Run:
+2. Open **Command Prompt** or **PowerShell** as Administrator
+   (Right-click the Start button → *Terminal (Admin)* or search for *cmd* → *Run as administrator*)
+3. Navigate to the folder where you saved the file — for example, if it's in Downloads:
+
+```
+cd %USERPROFILE%\Downloads
+```
+
+4. Run:
 
 ```
 winposture.exe
