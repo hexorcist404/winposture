@@ -12,6 +12,13 @@ permissions:
 
 jobs:
   claude:
+    # Only allow the repo owner / maintainer to trigger Claude.
+    # Without this guard any GitHub user could comment and invoke Claude with
+    # write permissions on the repository.
+    if: >
+      github.event.comment.user.login == 'hexorcist404' ||
+      github.event.comment.author_association == 'OWNER' ||
+      github.event.comment.author_association == 'COLLABORATOR'
     runs-on: ubuntu-latest
     steps:
       - uses: anthropics/claude-code-action@v1

@@ -205,7 +205,7 @@ class Reporter:
             path:   Destination file path for the HTML file.
         """
         try:
-            from jinja2 import Environment, FileSystemLoader, select_autoescape
+            from jinja2 import Environment, FileSystemLoader
         except ImportError:
             log.error("Jinja2 not installed — cannot generate HTML report")
             return
@@ -220,7 +220,9 @@ class Reporter:
             template_dir = Path(__file__).parent.parent.parent / "templates"
         env = Environment(
             loader=FileSystemLoader(str(template_dir)),
-            autoescape=select_autoescape(["html"]),
+            autoescape=True,  # Always escape — the template is always HTML.
+            # Note: select_autoescape(["html"]) would NOT autoescape "report.html.j2"
+            # because it checks the last extension (".j2"), not the full name.
         )
         try:
             template = env.get_template("report.html.j2")

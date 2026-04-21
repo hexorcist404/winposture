@@ -7,9 +7,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from winposture.models import AuditReport, CheckResult, Severity, Status
 from winposture.reporter import Reporter

@@ -105,7 +105,7 @@ class TestMain:
         with (
             patch("sys.argv", ["winposture"] + argv),
             patch(self._SCANNER_PATH, return_value=mock_scanner_instance) as MockScanner,
-            patch(self._REPORTER_PATH, return_value=mock_reporter_instance) as MockReporter,
+            patch(self._REPORTER_PATH, return_value=mock_reporter_instance),
             patch(self._ADMIN_PATH, return_value=is_admin),
             patch(self._PROFILE_PATH, return_value=MagicMock()),
         ):

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
 
 from winposture.models import AuditReport, CheckResult, Severity, Status
 from winposture.scoring import calculate_score, score_grade
@@ -312,7 +311,8 @@ class TestNonAdminScan:
 
 class TestReportRoundTrip:
     def test_html_report_contains_all_categories(self):
-        import tempfile, os
+        import tempfile
+        import os
         from winposture.reporter import Reporter
 
         results = _clean_win11_pro_results()
@@ -332,7 +332,9 @@ class TestReportRoundTrip:
             assert cat in content, f"Category '{cat}' not found in HTML report"
 
     def test_json_report_preserves_all_results(self):
-        import json, tempfile, os
+        import json
+        import tempfile
+        import os
         from winposture.reporter import Reporter
 
         results = _clean_win11_pro_results()

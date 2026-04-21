@@ -86,6 +86,15 @@ PyPI package coming soon.
 > **Only run WinPosture on systems you own or have explicit written authorization
 > to audit.**  Unauthorized use may violate computer fraud laws in your jurisdiction.
 
+### How WinPosture queries your system
+
+WinPosture uses PowerShell subprocesses with `-ExecutionPolicy Bypass` to read system
+configuration. This flag is required so the tool can run on machines with any execution
+policy setting — including the default `Restricted` policy — without requiring you to
+permanently change your policy. **No scripts are written to disk.** Each command is a
+read-only query passed directly to the PowerShell process; the bypass applies only to
+that subprocess and does not change the machine's policy setting.
+
 ---
 
 ## Usage

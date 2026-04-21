@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from types import ModuleType
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from winposture.models import AuditReport, CheckResult, Severity, Status
 from winposture.scanner import Scanner

@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from pathlib import Path
 
-import pytest
 
 from winposture.profile import Profile, load_profile
 
