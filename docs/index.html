@@ -406,7 +406,7 @@
         <div class="step-num">1</div>
         <div class="step-body">
           <h3>Download the executable</h3>
-          <p>Grab <code>winposture.exe</code> from the <a href="https://github.com/hexorcist404/winposture/releases/latest">latest release</a>. No installer needed.</p>
+          <p>Grab <code>winposture.exe</code> from the <a href="https://github.com/hexorcist404/winposture/releases/latest">latest release</a> and save it somewhere easy to find — your Desktop or Downloads folder works fine.</p>
         </div>
       </div>
 
@@ -421,13 +421,23 @@
       <div class="step">
         <div class="step-num">3</div>
         <div class="step-body">
+          <h3>Navigate to the folder where you saved the file</h3>
+          <p>For example, if you saved it in Downloads:</p>
+          <pre>cd %USERPROFILE%\Downloads</pre>
+          <p style="margin-top:0.4rem; font-size:0.85rem; color:var(--muted);">Tip: in File Explorer, navigate to the folder, then type <code>cmd</code> in the address bar and press Enter to open a terminal there directly.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
           <h3>Run a scan</h3>
           <pre>winposture.exe</pre>
         </div>
       </div>
 
       <div class="step">
-        <div class="step-num">4</div>
+        <div class="step-num">5</div>
         <div class="step-body">
           <h3>Generate an HTML report (optional)</h3>
           <pre>winposture.exe --html report.html --verbose</pre>
@@ -436,7 +446,7 @@
       </div>
 
       <div class="step">
-        <div class="step-num">5</div>
+        <div class="step-num">6</div>
         <div class="step-body">
           <h3>Track changes over time</h3>
           <pre>winposture.exe --baseline before.json
