@@ -77,11 +77,11 @@
       position: relative;
     }
     /* Grade colour sets --gauge-color via class */
-    .gauge-A { background: conic-gradient(#059669 {{ report.score }}%, #e2f8ef {{ report.score }}%); }
-    .gauge-B { background: conic-gradient(#16a34a {{ report.score }}%, #e2f5e6 {{ report.score }}%); }
-    .gauge-C { background: conic-gradient(#ca8a04 {{ report.score }}%, #fef9e7 {{ report.score }}%); }
-    .gauge-D { background: conic-gradient(#ea580c {{ report.score }}%, #fff4ec {{ report.score }}%); }
-    .gauge-F { background: conic-gradient(#dc2626 {{ report.score }}%, #fff0f0 {{ report.score }}%); }
+    .gauge-A { background: conic-gradient(#059669 {{ report.score | int }}%, #e2f8ef {{ report.score | int }}%); }
+    .gauge-B { background: conic-gradient(#16a34a {{ report.score | int }}%, #e2f5e6 {{ report.score | int }}%); }
+    .gauge-C { background: conic-gradient(#ca8a04 {{ report.score | int }}%, #fef9e7 {{ report.score | int }}%); }
+    .gauge-D { background: conic-gradient(#ea580c {{ report.score | int }}%, #fff4ec {{ report.score | int }}%); }
+    .gauge-F { background: conic-gradient(#dc2626 {{ report.score | int }}%, #fff0f0 {{ report.score | int }}%); }
     .gauge-inner {
       width: 126px;
       height: 126px;
@@ -451,7 +451,7 @@
   <section>
     <h2 class="section-title">Category Breakdown</h2>
     {% for cat in category_data %}
-    <details class="cat-block"{% if cat.fail_count or cat.warn_count %} open{% endif %}>
+    <details class="cat-block"{% if cat.fail_count or cat.warn_count or cat.error_count %} open{% endif %}>
       <summary class="cat-header">
         <span class="cat-name">{{ cat.name }}</span>
         <span class="cat-meta">

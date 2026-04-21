@@ -353,6 +353,7 @@ class Reporter:
                 "fail_count":  sum(1 for r in cat_results if r.status == Status.FAIL),
                 "warn_count":  sum(1 for r in cat_results if r.status == Status.WARN),
                 "pass_count":  sum(1 for r in cat_results if r.status == Status.PASS),
+                "error_count": sum(1 for r in cat_results if r.status == Status.ERROR),
             })
 
         # Top findings: CRITICAL+HIGH FAIL/WARN, up to 5
@@ -468,6 +469,13 @@ class Reporter:
             "Remediation should be prioritized by severity, "
             "addressing critical and high severity findings first."
         )
+
+        if report.error_count:
+            n = report.error_count
+            parts.append(
+                f"Note: {n} check{'s' if n != 1 else ''} could not complete "
+                "(run as Administrator for full results)."
+            )
 
         return "  ".join(parts)
 

@@ -136,6 +136,32 @@ class TestGenerateHtmlReport:
         html = self._generate(_make_report())
         assert "Appendix B" in html
 
+    def test_html_special_chars_escaped(self):
+        """Regression: autoescape=True must escape user-controlled fields.
+
+        select_autoescape(["html"]) silently returned False for .j2 templates
+        because it checks the last extension (.j2, not .html). Verify that a
+        future change cannot re-introduce raw output.
+        """
+        xss_payload = '<script>alert(1)</script>'
+        report = AuditReport(
+            hostname=f"HOST-{xss_payload}",
+            os_version="10.0.22631",
+            scan_timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            scan_duration=1.0,
+            results=[
+                CheckResult(
+                    "Security", "XSS Check", Status.FAIL, Severity.HIGH,
+                    "desc", f"Details: {xss_payload}", "Remediate",
+                ),
+            ],
+            score=50,
+            is_admin=False,
+        )
+        html = self._generate(report)
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;" in html
+
 
 # ---------------------------------------------------------------------------
 # JSON report generation
