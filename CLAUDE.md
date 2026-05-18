@@ -1,5 +1,17 @@
 # WinPosture — Claude Code Project Context
 
+## Git Commit Author
+
+Always use these credentials for commits in this repo:
+
+```
+git config user.name "hexorcist404"
+git config user.email "hexorcist404@pm.me"
+```
+
+The `Co-Authored-By` trailer should also use this identity:
+`Co-Authored-By: hexorcist404 <hexorcist404@pm.me>`
+
 ## Project Overview
 
 WinPosture is a portable Windows security posture auditor. It runs locally on a
